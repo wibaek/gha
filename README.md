@@ -12,6 +12,8 @@ github-automation
     └── workflows
         ├── python-ci.yaml
         ├── node-ci.yaml
+        ├── cloudflare-pages-deploy.yaml
+        ├── cloudflare-workers-deploy.yaml
         ├── docker-build-push.yaml
         ├── release.yaml
         ├── ecs-deploy.yaml
@@ -22,6 +24,8 @@ github-automation
 | --- | --- |
 | `python-ci.yaml` | Python CI |
 | `node-ci.yaml` | Node.js CI |
+| `cloudflare-pages-deploy.yaml` | Cloudflare Pages deploy |
+| `cloudflare-workers-deploy.yaml` | Cloudflare Workers deploy |
 | `docker-build-push.yaml` | Docker image build/push |
 | `release.yaml` | Release PR, tag, GitHub Release, CHANGELOG |
 | `ecs-deploy.yaml` | ECS service deploy |
@@ -80,13 +84,13 @@ sequenceDiagram
 ```yaml
 jobs:
   node-ci:
-    uses: wibaek/github-automation/.github/workflows/node-ci.yaml@v1.0.0
+    uses: wibaek/github-automation/.github/workflows/node-ci.yaml@v1.1
 ```
 
 기본 규칙은 다음과 같습니다.
 
 - reusable workflow는 `jobs.<job_id>.uses`로 호출합니다.
-- workflow 버전은 `@v1.0.0`처럼 tag로 고정합니다.
+- workflow 버전은 `@v1.1`처럼 tag로 고정합니다.
 - 기본 권한은 `contents: read`로 시작합니다.
 - Docker image push에는 registry에 맞는 권한을 추가합니다. GHCR은 `packages: write`, ECR/ECS는 `id-token: write`가 필요합니다.
 - secrets는 호출하는 workflow에서 명시적으로 넘깁니다.
@@ -94,6 +98,7 @@ jobs:
 - ECS 배포는 `docker-build-push.yaml` 뒤에 `ecs-deploy.yaml`을 붙입니다.
 - 배포 job은 `docker-build-push.yaml`의 `image-reference` output을 받아서 같은 이미지를 배포합니다.
 - dev, stage, prod는 같은 deploy workflow를 쓰고 `environment`, host/path/cluster/service 같은 input만 바꿉니다.
+- Cloudflare Pages/Workers 배포는 Docker 라인과 별도 adapter workflow를 사용합니다.
 - 릴리즈 관리는 `release.yaml`이 담당하고, Docker build/deploy는 별도 job으로 명시적으로 연결합니다.
 
 구체적인 caller YAML 예시는 [docs/workflow-uses](docs/workflow-uses)를 봅니다.
@@ -103,8 +108,8 @@ jobs:
 공용 workflow는 SemVer tag로 배포합니다.
 
 ```bash
-git tag v1.0.0
-git push origin v1.0.0
+git tag v1.1
+git push origin v1.1
 ```
 
 이미 배포한 tag는 가능한 한 옮기지 않습니다. 같은 tag가 가리키는 코드가 바뀌면 사용하는 프로젝트의 재현성이 깨집니다.

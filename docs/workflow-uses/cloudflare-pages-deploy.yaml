@@ -1,0 +1,25 @@
+name: Cloudflare Pages Deploy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cloudflare-pages-deploy:
+    name: Cloudflare Pages Deploy
+    uses: wibaek/github-automation/.github/workflows/cloudflare-pages-deploy.yaml@v1.1
+    with:
+      environment: "prod"
+      environment-url: "https://example.com"
+      project-name: "my-site"
+      pages-directory: "dist"
+      branch: "main"
+      install-command: "pnpm install --frozen-lockfile"
+      build-command: "pnpm build"
+    secrets:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
