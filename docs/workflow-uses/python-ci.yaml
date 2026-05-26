@@ -16,7 +16,7 @@ jobs:
     with:
       python-version: "3.12"
       python-package-tool: "uv"
-      lint-command: "uv run ruff check ."
-      typecheck-command: ""
       test-command: "auto"
-      cache-dependency-path: "uv.lock"
+      format-command: "auto"
+      lint-command: "auto"
+      typecheck-command: ""

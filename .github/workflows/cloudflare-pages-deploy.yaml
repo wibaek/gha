@@ -23,7 +23,7 @@ on:
         default: "."
 
       package-manager:
-        description: "사용할 패키지 매니저. npm, pnpm, yarn 중 하나"
+        description: "사용할 패키지 매니저. 선택: npm, pnpm, yarn."
         required: false
         type: string
         default: "pnpm"

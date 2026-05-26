@@ -23,7 +23,7 @@ on:
         default: "."
 
       python-package-tool:
-        description: "Python 패키지 도구. pip, uv, poetry 중 하나"
+        description: "Python 패키지 도구. 선택: uv, pip, poetry."
         required: false
         type: string
         default: "uv"
@@ -34,11 +34,23 @@ on:
         type: string
         default: "auto"
 
-      lint-command:
-        description: "린트 명령어. 비워두면 실행하지 않음."
+      test-command:
+        description: "테스트 명령어. auto면 python-package-tool 기준으로 자동 실행, 빈 문자열이면 실행하지 않음."
         required: false
         type: string
-        default: ""
+        default: "auto"
+
+      format-command:
+        description: "포맷 검사 명령어. auto면 python-package-tool 기준으로 Ruff format check 실행, 빈 문자열이면 실행하지 않음."
+        required: false
+        type: string
+        default: "auto"
+
+      lint-command:
+        description: "린트 명령어. auto면 python-package-tool 기준으로 Ruff lint 실행, 빈 문자열이면 실행하지 않음."
+        required: false
+        type: string
+        default: "auto"
 
       typecheck-command:
         description: "타입 검사 명령어. 비워두면 실행하지 않음."
@@ -46,20 +58,8 @@ on:
         type: string
         default: ""
 
-      test-command:
-        description: "테스트 명령어. auto면 python-package-tool 기준으로 자동 실행, 빈 문자열이면 실행하지 않음."
-        required: false
-        type: string
-        default: "auto"
-
-      cache:
-        description: "setup-python 캐시 방식. pip, pipenv, poetry 중 하나"
-        required: false
-        type: string
-        default: "pip"
-
       cache-dependency-path:
-        description: "캐시 무효화 기준이 되는 의존성 파일 경로. 비워두면 setup-python 기본값 사용."
+        description: "uv 캐시 무효화 기준 lockfile glob. 비워두면 uv.lock 사용."
         required: false
         type: string
         default: ""
@@ -84,7 +84,7 @@ jobs:
       - name: Python 패키지 도구 검증
         run: |
           case "${{ inputs.python-package-tool }}" in
-            pip|uv|poetry)
+            uv|pip|poetry)
               ;;
             *)
               echo "지원하지 않는 python-package-tool: ${{ inputs.python-package-tool }}"
@@ -93,25 +93,9 @@ jobs:
           esac
 
       - name: Python 설정
-        if: ${{ inputs.python-package-tool == 'uv' }}
         uses: actions/setup-python@v6
         with:
           python-version: ${{ inputs.python-version }}
-
-      - name: Python 설정
-        if: ${{ inputs.python-package-tool != 'uv' && inputs.cache-dependency-path == '' }}
-        uses: actions/setup-python@v6
-        with:
-          python-version: ${{ inputs.python-version }}
-          cache: ${{ inputs.cache }}
-
-      - name: Python 설정 및 캐시 기준 파일 지정
-        if: ${{ inputs.python-package-tool != 'uv' && inputs.cache-dependency-path != '' }}
-        uses: actions/setup-python@v6
-        with:
-          python-version: ${{ inputs.python-version }}
-          cache: ${{ inputs.cache }}
-          cache-dependency-path: ${{ inputs.cache-dependency-path }}
 
       - name: uv 설정
         if: ${{ inputs.python-package-tool == 'uv' }}
@@ -124,12 +108,12 @@ jobs:
         if: ${{ inputs.install-command == 'auto' }}
         run: |
           case "${{ inputs.python-package-tool }}" in
+            uv)
+              uv sync --frozen
+              ;;
             pip)
               python -m pip install --upgrade pip
               pip install -r requirements.txt
-              ;;
-            uv)
-              uv sync --frozen
               ;;
             poetry)
               python -m pip install --upgrade pip
@@ -142,8 +126,42 @@ jobs:
         if: ${{ inputs.install-command != '' && inputs.install-command != 'auto' }}
         run: ${{ inputs.install-command }}
 
-      - name: 린트 실행
-        if: ${{ inputs.lint-command != '' }}
+      - name: 포맷 자동 검사
+        if: ${{ inputs.format-command == 'auto' }}
+        run: |
+          case "${{ inputs.python-package-tool }}" in
+            uv)
+              uv run ruff format --check .
+              ;;
+            pip)
+              ruff format --check .
+              ;;
+            poetry)
+              poetry run ruff format --check .
+              ;;
+          esac
+
+      - name: 사용자 지정 포맷 검사 실행
+        if: ${{ inputs.format-command != '' && inputs.format-command != 'auto' }}
+        run: ${{ inputs.format-command }}
+
+      - name: 린트 자동 실행
+        if: ${{ inputs.lint-command == 'auto' }}
+        run: |
+          case "${{ inputs.python-package-tool }}" in
+            uv)
+              uv run ruff check .
+              ;;
+            pip)
+              ruff check .
+              ;;
+            poetry)
+              poetry run ruff check .
+              ;;
+          esac
+
+      - name: 사용자 지정 린트 실행
+        if: ${{ inputs.lint-command != '' && inputs.lint-command != 'auto' }}
         run: ${{ inputs.lint-command }}
 
       - name: 타입 검사 실행
@@ -154,11 +172,11 @@ jobs:
         if: ${{ inputs.test-command == 'auto' }}
         run: |
           case "${{ inputs.python-package-tool }}" in
-            pip)
-              pytest -q
-              ;;
             uv)
               uv run pytest -q
+              ;;
+            pip)
+              pytest -q
               ;;
             poetry)
               poetry run pytest -q

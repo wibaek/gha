@@ -1,0 +1,27 @@
+name: Docker Image Build/Push to Docker Hub
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  docker-build-docker-hub-push:
+    name: Docker Image Build/Push to Docker Hub
+    uses: wibaek/github-automation/.github/workflows/docker-build-docker-hub-push.yaml@v1.0
+    with:
+      dockerhub-username: ${{ vars.DOCKERHUB_USERNAME }}
+      image-name: "${{ vars.DOCKERHUB_USERNAME }}/my-app"
+      context: "."
+      dockerfile: "./Dockerfile"
+      platforms: "linux/amd64"
+      cache-type: "gha"
+      cache-scope: "app"
+    secrets:
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}

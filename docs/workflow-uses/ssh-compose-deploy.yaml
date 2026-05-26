@@ -1,4 +1,4 @@
-name: SSH Compose Deploy
+name: SSH Compose Deploy With Server Registry Pull
 
 on:
   workflow_dispatch:
@@ -21,7 +21,7 @@ jobs:
       compose-file: "docker-compose.yml"
       env-file: ".env"
       registry-login: true
-      registry: "ghcr.io"
+      registry: ${{ vars.REGISTRY }}
       registry-username: ${{ vars.REGISTRY_USERNAME }}
       image-tag: ${{ github.sha }}
       healthcheck-url: "http://127.0.0.1:8000/health"

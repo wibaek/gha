@@ -23,7 +23,7 @@ on:
         default: "."
 
       package-manager:
-        description: "사용할 패키지 매니저. npm, pnpm, yarn 중 하나"
+        description: "사용할 패키지 매니저. 선택: npm, pnpm, yarn."
         required: false
         type: string
         default: "pnpm"
@@ -98,14 +98,6 @@ jobs:
               ;;
           esac
 
-      - name: Corepack 활성화
-        if: ${{ inputs.package-manager == 'pnpm' || inputs.package-manager == 'yarn' }}
-        run: corepack enable
-
-      - name: pnpm 준비
-        if: ${{ inputs.package-manager == 'pnpm' }}
-        run: corepack prepare "pnpm@${{ inputs.pnpm-version }}" --activate
-
       - name: Node 설정
         if: ${{ inputs.cache-dependency-path == '' }}
         uses: actions/setup-node@v6
@@ -120,6 +112,14 @@ jobs:
           node-version: ${{ inputs.node-version }}
           cache: ${{ inputs.package-manager }}
           cache-dependency-path: ${{ inputs.cache-dependency-path }}
+
+      - name: Corepack 활성화
+        if: ${{ inputs.package-manager == 'pnpm' || inputs.package-manager == 'yarn' }}
+        run: corepack enable
+
+      - name: pnpm 준비
+        if: ${{ inputs.package-manager == 'pnpm' }}
+        run: corepack prepare "pnpm@${{ inputs.pnpm-version }}" --activate
 
       - name: 의존성 설치
         if: ${{ inputs.install-command == '' }}

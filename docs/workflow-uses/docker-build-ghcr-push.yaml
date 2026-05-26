@@ -1,0 +1,25 @@
+name: Docker Image Build/Push to GHCR
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  docker-build-ghcr-push:
+    name: Docker Image Build/Push to GHCR
+    uses: wibaek/github-automation/.github/workflows/docker-build-ghcr-push.yaml@v1.0
+    with:
+      image-name: "ghcr.io/${{ github.repository }}"
+      context: "."
+      dockerfile: "./Dockerfile"
+      platforms: "linux/amd64"
+      cache-type: "gha"
+      cache-scope: "app"

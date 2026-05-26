@@ -8,12 +8,14 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
-  docker-build-push:
-    name: Docker Image Build/Push
-    uses: wibaek/github-automation/.github/workflows/docker-build-push.yaml@v1.0
+  docker-build-ghcr-push:
+    name: Docker Image Build/Push to GHCR
+    permissions:
+      contents: read
+      packages: write
+    uses: wibaek/github-automation/.github/workflows/docker-build-ghcr-push.yaml@v1.0
     with:
       image-name: "ghcr.io/${{ github.repository }}"
       context: "."
@@ -22,10 +24,13 @@ jobs:
       cache-type: "gha"
       cache-scope: "app"
 
-  ssh-compose-deploy:
-    name: SSH Docker Compose Deploy
-    needs: docker-build-push
-    uses: wibaek/github-automation/.github/workflows/ssh-compose-deploy.yaml@v1.0
+  ssh-compose-image-load-deploy:
+    name: SSH Docker Compose Image Load Deploy
+    needs: docker-build-ghcr-push
+    permissions:
+      contents: read
+      packages: read
+    uses: wibaek/github-automation/.github/workflows/ssh-compose-image-load-deploy.yaml@v1.0
     with:
       host: ${{ vars.HOST }}
       port: "22"
@@ -34,13 +39,12 @@ jobs:
       environment: "prod"
       environment-url: "https://example.com"
       project-directory: "/srv/my-app"
+      compose-source-file: "docker-compose.yml"
       compose-file: "docker-compose.yml"
       env-file: ".env"
-      registry-login: true
-      registry: "ghcr.io"
-      registry-username: ${{ vars.REGISTRY_USERNAME }}
-      image-reference: ${{ needs.docker-build-push.outputs.image-reference }}
+      image-reference: ${{ needs.docker-build-ghcr-push.outputs.image-reference }}
+      local-image-name: "my-app"
+      service: "app"
       healthcheck-url: "http://127.0.0.1:8000/health"
     secrets:
       SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-      REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}

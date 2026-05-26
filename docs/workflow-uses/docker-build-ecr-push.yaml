@@ -1,9 +1,11 @@
-name: ECR Image Build/Push and ECS Deploy
+name: Docker Image Build/Push to Amazon ECR
 
 on:
   push:
     branches:
       - main
+    tags:
+      - "v*"
   workflow_dispatch:
 
 permissions:
@@ -25,19 +27,3 @@ jobs:
         type=raw,value=${{ github.sha }}
       cache-type: "gha"
       cache-scope: "my-app"
-
-  ecs-deploy:
-    name: ECS Deploy
-    needs: docker-build-ecr-push
-    uses: wibaek/github-automation/.github/workflows/ecs-deploy.yaml@v1.0
-    with:
-      aws-region: ${{ vars.AWS_REGION }}
-      aws-role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
-      environment: "prod"
-      environment-url: "https://example.com"
-      cluster: "my-cluster"
-      service: "my-service"
-      task-definition: "ops/ecs/task-definition.json"
-      container-name: "app"
-      image: ${{ needs.docker-build-ecr-push.outputs.image-reference }}
-      wait-for-service-stability: true

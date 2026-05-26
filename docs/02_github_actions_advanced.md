@@ -20,16 +20,20 @@ Docker Buildx의 cache backend를 명시해야 다음 workflow run에서 이전 
 
 | Workflow | 용도 |
 | --- | --- |
-| `.github/workflows/docker-build-push.yaml` | Docker Buildx 기반 이미지 빌드, cache, registry push |
-| `.github/workflows/ssh-compose-deploy.yaml` | SSH 접속 후 `docker compose pull`, `docker compose up -d --no-build`, healthcheck |
+| `.github/workflows/docker-build-ghcr-push.yaml` | GHCR Docker Buildx 기반 이미지 빌드, cache, push |
+| `.github/workflows/docker-build-ecr-push.yaml` | ECR Docker Buildx 기반 이미지 빌드, cache, push |
+| `.github/workflows/docker-build-docker-hub-push.yaml` | Docker Hub Docker Buildx 기반 이미지 빌드, cache, push |
+| `.github/workflows/docker-build-push.yaml` | 기존 generic Docker Buildx 기반 이미지 빌드, cache, registry push |
+| `.github/workflows/ssh-compose-image-load-deploy.yaml` | Actions runner에서 registry pull 후 SSH로 image와 compose file 전송, `docker compose up -d --no-build`, healthcheck |
+| `.github/workflows/ssh-compose-deploy.yaml` | 서버 registry credential로 `docker compose pull`, `docker compose up -d --no-build`, healthcheck |
 | `.github/workflows/ecs-deploy.yaml` | ECS task definition 렌더링 후 service update |
 
 GHCR에 이미지를 push하는 최소 예시는 다음과 같습니다.
 
 ```yaml
 jobs:
-  docker-build-push:
-    uses: wibaek/github-automation/.github/workflows/docker-build-push.yaml@v1.0
+  docker-build-ghcr-push:
+    uses: wibaek/github-automation/.github/workflows/docker-build-ghcr-push.yaml@v1.0
     with:
       image-name: "ghcr.io/${{ github.repository }}"
       context: "."
@@ -38,33 +42,54 @@ jobs:
       cache-scope: "app"
 ```
 
-빌드한 image reference를 서버 배포에 넘기는 예시는 다음과 같습니다.
+GHCR private image를 단일 VM에 배포할 때는 서버가 GHCR에 로그인하지 않게 두는 편이 깔끔합니다.
+빌드한 image reference를 runner에서 pull한 뒤, Docker image tar stream과 compose file만 서버로 전송합니다.
 
 ```yaml
 jobs:
-  docker-build-push:
-    uses: wibaek/github-automation/.github/workflows/docker-build-push.yaml@v1.0
+  docker-build-ghcr-push:
+    permissions:
+      contents: read
+      packages: write
+    uses: wibaek/github-automation/.github/workflows/docker-build-ghcr-push.yaml@v1.0
     with:
       image-name: "ghcr.io/${{ github.repository }}"
       cache-scope: "app"
 
-  ssh-compose-deploy:
-    needs: docker-build-push
-    uses: wibaek/github-automation/.github/workflows/ssh-compose-deploy.yaml@v1.0
+  ssh-compose-image-load-deploy:
+    needs: docker-build-ghcr-push
+    permissions:
+      contents: read
+      packages: read
+    uses: wibaek/github-automation/.github/workflows/ssh-compose-image-load-deploy.yaml@v1.0
     with:
       host: ${{ vars.HOST }}
       user: ${{ vars.USER }}
       known-hosts: ${{ vars.KNOWN_HOSTS }}
       project-directory: "/srv/my-app"
-      registry-login: true
-      image-reference: ${{ needs.docker-build-push.outputs.image-reference }}
+      compose-source-file: "docker-compose.yml"
+      compose-file: "docker-compose.yml"
+      image-reference: ${{ needs.docker-build-ghcr-push.outputs.image-reference }}
+      local-image-name: "my-app"
+      service: "app"
       healthcheck-url: "http://127.0.0.1:8000/health"
     secrets:
       SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-      REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
 ```
 
-서버 compose 파일에서는 `IMAGE_TAG`, `IMAGE_DIGEST`, `IMAGE_REF` 환경 변수를 사용할 수 있습니다. 가능하면 `IMAGE_REF` 하나만 쓰는 편이 가장 단순합니다.
+서버 compose 파일은 workflow가 매번 업로드합니다. runtime secret이 들어 있는 `.env` 파일은 repository에서 올리지 않고 서버에 유지한 뒤 `env-file` input으로 참조합니다.
+compose 파일에서는 `IMAGE_REF` 환경 변수를 local image reference로 사용합니다. 서버가 registry에 접근하지 않도록 workflow는 `docker compose up --pull never`를 강제하고, compose 파일에도 `pull_policy: never`를 같이 둡니다.
+
+```yaml
+services:
+  app:
+    image: ${IMAGE_REF}
+    pull_policy: never
+    restart: unless-stopped
+```
+
+이 방식에서는 VM에 `docker login ghcr.io`가 필요하지 않습니다. `GITHUB_TOKEN`은 Actions runner의 registry login에만 쓰이고, 서버에는 전달되지 않습니다.
+VM architecture가 runner와 다르면 `pull-platform: "linux/arm64"`처럼 서버에 맞는 platform을 명시합니다.
 
 ## GHCR에 이미지 빌드 및 푸시
 
@@ -248,48 +273,22 @@ Registry cache는 `buildcache` 같은 별도 tag를 사용합니다. 이 tag는 
 
 ## Docker Hub로 푸시하는 경우
 
-Docker Hub를 쓰면 login 정보만 바뀝니다.
+Docker Hub는 전용 reusable workflow를 사용합니다. Docker Hub 토큰은 password가 아니라 access token을 secret으로 저장해서 쓰는 편이 좋습니다.
 
 ```yaml
-name: Docker 이미지 배포
-
-on:
-  push:
-    branches:
-      - main
-
 permissions:
   contents: read
 
 jobs:
-  docker:
-    name: Docker Hub 이미지 빌드 및 푸시
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: 코드 체크아웃
-        uses: actions/checkout@v6
-
-      - name: Docker Buildx 설정
-        uses: docker/setup-buildx-action@v4
-
-      - name: Docker Hub 로그인
-        uses: docker/login-action@v4
-        with:
-          username: ${{ vars.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Docker 이미지 빌드 및 푸시
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          push: true
-          tags: ${{ vars.DOCKERHUB_USERNAME }}/my-app:latest
-          cache-from: type=gha,scope=my-app
-          cache-to: type=gha,mode=max,scope=my-app
+  docker-build-docker-hub-push:
+    uses: wibaek/github-automation/.github/workflows/docker-build-docker-hub-push.yaml@v1.0
+    with:
+      dockerhub-username: ${{ vars.DOCKERHUB_USERNAME }}
+      image-name: "${{ vars.DOCKERHUB_USERNAME }}/my-app"
+      cache-scope: "my-app"
+    secrets:
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
 ```
-
-Docker Hub 토큰은 password가 아니라 access token을 secret으로 저장해서 쓰는 편이 좋습니다.
 
 ## Multi-platform 이미지
 

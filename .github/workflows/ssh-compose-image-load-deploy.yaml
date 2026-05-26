@@ -1,4 +1,4 @@
-name: SSH Docker Compose Deploy
+name: SSH Docker Compose Image Load Deploy
 
 on:
   workflow_call:
@@ -9,6 +9,41 @@ on:
         required: false
         type: string
         default: "ubuntu-latest"
+
+      registry:
+        description: "러너에서 이미지를 pull할 registry. 예: ghcr.io, docker.io, 123456789012.dkr.ecr.ap-northeast-2.amazonaws.com"
+        required: false
+        type: string
+        default: "ghcr.io"
+
+      registry-username:
+        description: "러너 registry 로그인 사용자명. 비워두면 github.actor 사용."
+        required: false
+        type: string
+        default: ""
+
+      image-reference:
+        description: "러너에서 pull할 image reference. 예: ghcr.io/owner/app@sha256:..."
+        required: true
+        type: string
+
+      pull-platform:
+        description: "docker pull --platform 값. 예: linux/amd64. 비워두면 runner 기본 플랫폼 사용."
+        required: false
+        type: string
+        default: ""
+
+      local-image-name:
+        description: "서버에서 사용할 local image 이름. 비워두면 repository 이름 사용."
+        required: false
+        type: string
+        default: ""
+
+      local-image-tag:
+        description: "서버에서 사용할 local image tag. 비워두면 github.sha 앞 12자 사용."
+        required: false
+        type: string
+        default: ""
 
       host:
         description: "배포 대상 SSH host"
@@ -49,6 +84,12 @@ on:
         required: true
         type: string
 
+      compose-source-file:
+        description: "호출 repository에서 업로드할 compose file 경로"
+        required: false
+        type: string
+        default: "docker-compose.yml"
+
       compose-file:
         description: "서버 project-directory 기준 compose file 경로"
         required: false
@@ -73,47 +114,11 @@ on:
         type: string
         default: ""
 
-      image-tag:
-        description: "서버 compose에서 IMAGE_TAG로 사용할 값. 비워두면 github.sha 사용."
+      service:
+        description: "배포할 compose service 이름. 비워두면 전체 compose project를 올림."
         required: false
         type: string
         default: ""
-
-      image-digest:
-        description: "서버 compose에서 IMAGE_DIGEST로 사용할 값"
-        required: false
-        type: string
-        default: ""
-
-      image-reference:
-        description: "서버 compose에서 IMAGE_REF로 사용할 값"
-        required: false
-        type: string
-        default: ""
-
-      registry-login:
-        description: "서버에서 docker login을 수행할지 여부"
-        required: false
-        type: boolean
-        default: false
-
-      registry:
-        description: "서버에서 로그인할 registry. 예: ghcr.io, docker.io, 123456789012.dkr.ecr.ap-northeast-2.amazonaws.com"
-        required: false
-        type: string
-        default: "ghcr.io"
-
-      registry-username:
-        description: "서버에서 registry 로그인에 사용할 사용자명. 비워두면 github.actor 사용."
-        required: false
-        type: string
-        default: ""
-
-      pull-images:
-        description: "docker compose up 전에 docker compose pull을 실행할지 여부"
-        required: false
-        type: boolean
-        default: true
 
       remove-orphans:
         description: "docker compose up에 --remove-orphans를 붙일지 여부"
@@ -122,7 +127,7 @@ on:
         default: true
 
       pre-deploy-command:
-        description: "compose pull/up 전에 서버 project-directory에서 실행할 명령어"
+        description: "compose up 전에 서버 project-directory에서 실행할 명령어"
         required: false
         type: string
         default: ""
@@ -155,7 +160,7 @@ on:
         description: "job 제한 시간"
         required: false
         type: number
-        default: 15
+        default: 20
 
       concurrency-group:
         description: "배포 concurrency group. 비워두면 repository와 environment 기준으로 자동 생성."
@@ -177,10 +182,11 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 jobs:
   deploy:
-    name: SSH Docker Compose Deploy
+    name: SSH Docker Compose Image Load Deploy
     runs-on: ${{ inputs.runs-on }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
 
@@ -197,6 +203,44 @@ jobs:
         shell: bash
 
     steps:
+      - name: 배포 설정 검증
+        env:
+          REGISTRY: ${{ inputs.registry }}
+          REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+          IMAGE_REFERENCE: ${{ inputs.image-reference }}
+          COMPOSE_FILE: ${{ inputs.compose-file }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$IMAGE_REFERENCE" ]; then
+            echo "image-reference가 필요합니다."
+            exit 1
+          fi
+
+          if [ "${COMPOSE_FILE#/}" != "$COMPOSE_FILE" ]; then
+            echo "compose-file은 project-directory 기준 상대 경로여야 합니다: $COMPOSE_FILE"
+            exit 1
+          fi
+
+          if [ "$REGISTRY" != "ghcr.io" ] && [ -z "$REGISTRY_PASSWORD" ]; then
+            echo "ghcr.io가 아닌 private registry에서 pull하려면 REGISTRY_PASSWORD secret이 필요합니다."
+            exit 1
+          fi
+
+      - name: 코드 체크아웃
+        uses: actions/checkout@v6
+
+      - name: Compose 파일 검증
+        env:
+          COMPOSE_SOURCE_FILE: ${{ inputs.compose-source-file }}
+        run: |
+          set -euo pipefail
+
+          if [ ! -f "$COMPOSE_SOURCE_FILE" ]; then
+            echo "compose-source-file을 찾을 수 없습니다: $COMPOSE_SOURCE_FILE"
+            exit 1
+          fi
+
       - name: SSH 설정
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
@@ -220,32 +264,115 @@ jobs:
 
           chmod 600 ~/.ssh/known_hosts
 
-      - name: 서버 registry 로그인
-        if: ${{ inputs.registry-login }}
+      - name: Runner registry 로그인
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ inputs.registry }}
+          username: ${{ inputs.registry-username != '' && inputs.registry-username || github.actor }}
+          password: ${{ secrets.REGISTRY_PASSWORD != '' && secrets.REGISTRY_PASSWORD || github.token }}
+
+      - name: Runner에서 이미지 pull
+        env:
+          IMAGE_REFERENCE: ${{ inputs.image-reference }}
+          PULL_PLATFORM: ${{ inputs.pull-platform }}
+        run: |
+          set -euo pipefail
+
+          pull_args=()
+          if [ -n "$PULL_PLATFORM" ]; then
+            pull_args+=(--platform "$PULL_PLATFORM")
+          fi
+
+          docker pull "${pull_args[@]}" "$IMAGE_REFERENCE"
+
+      - name: 서버 local image tag 생성
+        id: local-image
+        env:
+          IMAGE_REFERENCE: ${{ inputs.image-reference }}
+          LOCAL_IMAGE_NAME: ${{ inputs.local-image-name }}
+          LOCAL_IMAGE_TAG: ${{ inputs.local-image-tag }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$LOCAL_IMAGE_NAME" ]; then
+            LOCAL_IMAGE_NAME="${GITHUB_REPOSITORY##*/}"
+            LOCAL_IMAGE_NAME="$(printf '%s' "$LOCAL_IMAGE_NAME" | tr '[:upper:]' '[:lower:]')"
+          fi
+
+          if [ -z "$LOCAL_IMAGE_TAG" ]; then
+            LOCAL_IMAGE_TAG="${GITHUB_SHA::12}"
+          fi
+
+          local_image_reference="${LOCAL_IMAGE_NAME}:${LOCAL_IMAGE_TAG}"
+
+          docker tag "$IMAGE_REFERENCE" "$local_image_reference"
+
+          echo "reference=$local_image_reference" >> "$GITHUB_OUTPUT"
+          echo "tag=$LOCAL_IMAGE_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: 서버 project directory 준비
         env:
           SSH_HOST: ${{ inputs.host }}
           SSH_PORT: ${{ inputs.port }}
           SSH_USER: ${{ inputs.user }}
-          REGISTRY: ${{ inputs.registry }}
-          REGISTRY_USERNAME: ${{ inputs.registry-username != '' && inputs.registry-username || github.actor }}
-          REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+          PROJECT_DIRECTORY: ${{ inputs.project-directory }}
+          COMPOSE_FILE: ${{ inputs.compose-file }}
         run: |
           set -euo pipefail
 
-          if [ -z "$REGISTRY_PASSWORD" ]; then
-            echo "registry-login이 true이면 REGISTRY_PASSWORD secret이 필요합니다."
-            exit 1
-          fi
+          remote_env=$(printf 'PROJECT_DIRECTORY=%q COMPOSE_FILE=%q' \
+            "$PROJECT_DIRECTORY" \
+            "$COMPOSE_FILE")
 
-          registry=$(printf '%q' "$REGISTRY")
-          registry_username=$(printf '%q' "$REGISTRY_USERNAME")
-
-          printf '%s' "$REGISTRY_PASSWORD" | ssh \
+          ssh \
             -i ~/.ssh/deploy_key \
             -p "$SSH_PORT" \
             -o StrictHostKeyChecking=yes \
             "$SSH_USER@$SSH_HOST" \
-            "docker login $registry -u $registry_username --password-stdin"
+            "$remote_env bash -se" <<'REMOTE'
+          set -euo pipefail
+
+          mkdir -p "$PROJECT_DIRECTORY"
+
+          compose_dir="$(dirname "$COMPOSE_FILE")"
+          if [ "$compose_dir" != "." ]; then
+            mkdir -p "$PROJECT_DIRECTORY/$compose_dir"
+          fi
+          REMOTE
+
+      - name: Compose 파일 업로드
+        env:
+          SSH_HOST: ${{ inputs.host }}
+          SSH_PORT: ${{ inputs.port }}
+          SSH_USER: ${{ inputs.user }}
+          PROJECT_DIRECTORY: ${{ inputs.project-directory }}
+          COMPOSE_SOURCE_FILE: ${{ inputs.compose-source-file }}
+          COMPOSE_FILE: ${{ inputs.compose-file }}
+        run: |
+          set -euo pipefail
+
+          scp \
+            -i ~/.ssh/deploy_key \
+            -P "$SSH_PORT" \
+            -o StrictHostKeyChecking=yes \
+            "$COMPOSE_SOURCE_FILE" \
+            "$SSH_USER@$SSH_HOST:$PROJECT_DIRECTORY/$COMPOSE_FILE"
+
+      - name: 이미지를 서버 Docker cache로 전송
+        env:
+          SSH_HOST: ${{ inputs.host }}
+          SSH_PORT: ${{ inputs.port }}
+          SSH_USER: ${{ inputs.user }}
+          LOCAL_IMAGE_REFERENCE: ${{ steps.local-image.outputs.reference }}
+        run: |
+          set -euo pipefail
+
+          docker save "$LOCAL_IMAGE_REFERENCE" | gzip | ssh \
+            -i ~/.ssh/deploy_key \
+            -p "$SSH_PORT" \
+            -o StrictHostKeyChecking=yes \
+            "$SSH_USER@$SSH_HOST" \
+            "gunzip | docker load"
 
       - name: Docker Compose 배포
         env:
@@ -257,10 +384,9 @@ jobs:
           ENV_FILE: ${{ inputs.env-file }}
           COMPOSE_COMMAND: ${{ inputs.compose-command }}
           COMPOSE_PROFILES_VALUE: ${{ inputs.compose-profiles }}
-          IMAGE_TAG: ${{ inputs.image-tag != '' && inputs.image-tag || github.sha }}
-          IMAGE_DIGEST: ${{ inputs.image-digest }}
-          IMAGE_REF: ${{ inputs.image-reference }}
-          PULL_IMAGES: ${{ inputs.pull-images }}
+          SERVICE: ${{ inputs.service }}
+          IMAGE_REF: ${{ steps.local-image.outputs.reference }}
+          IMAGE_TAG: ${{ steps.local-image.outputs.tag }}
           REMOVE_ORPHANS: ${{ inputs.remove-orphans }}
           PRE_DEPLOY_COMMAND: ${{ inputs.pre-deploy-command }}
           POST_DEPLOY_COMMAND: ${{ inputs.post-deploy-command }}
@@ -270,16 +396,15 @@ jobs:
         run: |
           set -euo pipefail
 
-          remote_env=$(printf 'PROJECT_DIRECTORY=%q COMPOSE_FILE=%q ENV_FILE=%q COMPOSE_COMMAND=%q COMPOSE_PROFILES=%q IMAGE_TAG=%q IMAGE_DIGEST=%q IMAGE_REF=%q PULL_IMAGES=%q REMOVE_ORPHANS=%q PRE_DEPLOY_COMMAND=%q POST_DEPLOY_COMMAND=%q HEALTHCHECK_URL=%q HEALTHCHECK_TIMEOUT_SECONDS=%q HEALTHCHECK_INTERVAL_SECONDS=%q' \
+          remote_env=$(printf 'PROJECT_DIRECTORY=%q COMPOSE_FILE=%q ENV_FILE=%q COMPOSE_COMMAND=%q COMPOSE_PROFILES=%q SERVICE=%q IMAGE_REF=%q IMAGE_TAG=%q REMOVE_ORPHANS=%q PRE_DEPLOY_COMMAND=%q POST_DEPLOY_COMMAND=%q HEALTHCHECK_URL=%q HEALTHCHECK_TIMEOUT_SECONDS=%q HEALTHCHECK_INTERVAL_SECONDS=%q' \
             "$PROJECT_DIRECTORY" \
             "$COMPOSE_FILE" \
             "$ENV_FILE" \
             "$COMPOSE_COMMAND" \
             "$COMPOSE_PROFILES_VALUE" \
-            "$IMAGE_TAG" \
-            "$IMAGE_DIGEST" \
+            "$SERVICE" \
             "$IMAGE_REF" \
-            "$PULL_IMAGES" \
+            "$IMAGE_TAG" \
             "$REMOVE_ORPHANS" \
             "$PRE_DEPLOY_COMMAND" \
             "$POST_DEPLOY_COMMAND" \
@@ -303,21 +428,21 @@ jobs:
           fi
 
           export COMPOSE_PROFILES
-          export IMAGE_TAG
-          export IMAGE_DIGEST
           export IMAGE_REF
+          export IMAGE_TAG
+
+          docker image inspect "$IMAGE_REF" >/dev/null
 
           if [ -n "$PRE_DEPLOY_COMMAND" ]; then
             bash -lc "$PRE_DEPLOY_COMMAND"
           fi
 
-          if [ "$PULL_IMAGES" = "true" ]; then
-            $COMPOSE_COMMAND "${compose_args[@]}" pull
-          fi
-
-          up_args=(up -d --no-build)
+          up_args=(up -d --no-build --pull never)
           if [ "$REMOVE_ORPHANS" = "true" ]; then
             up_args+=(--remove-orphans)
+          fi
+          if [ -n "$SERVICE" ]; then
+            up_args+=("$SERVICE")
           fi
 
           $COMPOSE_COMMAND "${compose_args[@]}" "${up_args[@]}"
