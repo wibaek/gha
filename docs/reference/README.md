@@ -5,4 +5,4 @@
 - [GitHub Actions 기본 개념](01_github_actions.md)
 - [Docker build cache와 고급 예시](02_github_actions_advanced.md)
 - [GitHub Actions Worker 정리](03_github_actions_workers.md)
-- [05. GitHub Actions workflow syntax](05_workflow_syntax.md)
+- [04. GitHub Actions workflow syntax](04_workflow_syntax.md)
