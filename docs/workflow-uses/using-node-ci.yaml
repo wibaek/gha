@@ -1,0 +1,19 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  node-ci:
+    name: Node.js CI
+    uses: wibaek/gha/.github/workflows/node-ci.yaml@v1.0
+    with:
+      # 사용할 Node.js 버전입니다.
+      # 선택 예: "20", "22", "24"
+      node-version: "22"

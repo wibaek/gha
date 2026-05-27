@@ -12,12 +12,22 @@ permissions:
 jobs:
   cloudflare-workers-deploy:
     name: Cloudflare Workers Deploy
-    uses: wibaek/github-automation/.github/workflows/cloudflare-workers-deploy.yaml@v1.0
+    uses: wibaek/gha/.github/workflows/cloudflare-workers-deploy.yaml@v1.0
     with:
+      # GitHub Environments에 표시될 환경 이름입니다.
       environment: "prod"
+
+      # GitHub Environments에 표시될 배포 URL입니다.
       environment-url: "https://api.example.com"
+
+      # wrangler deploy --env 값입니다.
       wrangler-environment: "prod"
+
+      # 의존성 설치 명령입니다.
       install-command: "pnpm install --frozen-lockfile"
+
+      # Workers 배포 전에 실행할 build 명령입니다.
       build-command: "pnpm build"
     secrets:
+      # Cloudflare API token입니다.
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

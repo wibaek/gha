@@ -1,0 +1,71 @@
+name: Build and Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  docker:
+    uses: wibaek/gha/.github/workflows/docker-build-ghcr-push.yaml@v1.0
+    permissions:
+      contents: read
+      packages: write
+    with:
+      # auto면 ghcr.io/<owner>/<repo>로 image 이름을 만듭니다.
+      # 예: repository가 wibaek/my-api면 ghcr.io/wibaek/my-api
+      image-name: auto
+
+      # Docker build context입니다. 보통 repository root면 "."를 씁니다.
+      context: .
+
+      # context 기준 Dockerfile 경로입니다.
+      dockerfile: ./Dockerfile
+
+      # 빌드할 단일 CPU/OS 플랫폼입니다.
+      # 선택 예: linux/amd64, linux/arm64
+      platform: linux/amd64
+
+  deploy:
+    needs: docker
+    uses: wibaek/gha/.github/workflows/ssh-compose-vps-deploy.yaml@v1.0
+    permissions:
+      contents: read
+      packages: read
+    with:
+      # Docker Compose project 이름입니다.
+      # 서버에서 docker compose -p my-app ... 형태로 사용됩니다.
+      app-name: my-app
+
+      # compose.yaml 안의 service 이름입니다.
+      service-name: app
+
+      # VPS에 배포 파일을 둘 디렉터리입니다.
+      # 서버에는 /srv/my-app/compose.yaml, /srv/my-app/compose.env, /srv/my-app/app.env가 생깁니다.
+      remote-dir: /srv/my-app
+
+      # 호출 repository 안의 compose 파일 경로입니다.
+      compose-file: deploy/compose.yaml
+
+      # 앞 docker job의 output입니다.
+      # 실제 값 예: ghcr.io/wibaek/my-api@sha256:aaaaaaaa...
+      image-reference: ${{ needs.docker.outputs.image-reference }}
+
+      # true면 VPS에서 ghcr.io docker login 후 compose pull을 실행합니다.
+      # private GHCR image면 보통 true를 씁니다.
+      ghcr-login: true
+
+      # GHCR login username입니다. 비우면 reusable workflow 내부에서 github.actor를 씁니다.
+      ghcr-username: ${{ github.actor }}
+    secrets:
+      VPS_HOST: ${{ secrets.VPS_HOST }}
+      VPS_USER: ${{ secrets.VPS_USER }}
+      VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+      VPS_SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
+
+      # 서버 app.env로 저장될 전체 runtime env 내용입니다.
+      # 예:
+      # APP_ENV=production
+      # DATABASE_URL=postgresql://...
+      # JWT_SECRET=...
+      RUNTIME_ENV: ${{ secrets.PROD_APP_ENV }}

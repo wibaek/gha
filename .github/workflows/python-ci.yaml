@@ -23,7 +23,7 @@ on:
         default: "."
 
       python-package-tool:
-        description: "Python 패키지 도구. 선택: uv, pip, poetry."
+        description: "사용할 Python 패키지 도구. 선택: uv, pip, poetry."
         required: false
         type: string
         default: "uv"
@@ -59,10 +59,10 @@ on:
         default: ""
 
       cache-dependency-path:
-        description: "uv 캐시 무효화 기준 lockfile glob. 비워두면 uv.lock 사용."
+        description: "캐시 무효화 기준 uv lockfile glob"
         required: false
         type: string
-        default: ""
+        default: "uv.lock"
 
 permissions:
   contents: read
@@ -102,7 +102,7 @@ jobs:
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
         with:
           enable-cache: true
-          cache-dependency-glob: ${{ inputs.cache-dependency-path != '' && inputs.cache-dependency-path || 'uv.lock' }}
+          cache-dependency-glob: ${{ inputs.cache-dependency-path }}
 
       - name: 의존성 자동 설치
         if: ${{ inputs.install-command == 'auto' }}

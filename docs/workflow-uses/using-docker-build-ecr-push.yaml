@@ -1,0 +1,52 @@
+name: Docker Image Build/Push to Amazon ECR
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  docker-build-ecr-push:
+    name: Docker Image Build/Push to Amazon ECR
+    uses: wibaek/gha/.github/workflows/docker-build-ecr-push.yaml@v1.0
+    with:
+      # ECR registry가 있는 AWS region입니다.
+      # 예: ap-northeast-2, us-east-1
+      aws-region: ${{ vars.AWS_REGION }}
+
+      # GitHub OIDC로 assume할 AWS IAM role ARN입니다.
+      # 예: arn:aws:iam::123456789012:role/github-actions-ecr-push
+      aws-role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+
+      # push할 ECR image URI입니다.
+      # 실제 값 예: 123456789012.dkr.ecr.ap-northeast-2.amazonaws.com/my-app
+      image-name: "${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com/my-app"
+
+      # Docker build context입니다. 보통 repository root면 "."를 씁니다.
+      context: "."
+
+      # context 기준 Dockerfile 경로입니다.
+      dockerfile: "./Dockerfile"
+
+      # 빌드할 단일 CPU/OS 플랫폼입니다.
+      # 선택 예: linux/amd64, linux/arm64
+      platform: "linux/amd64"
+
+      # image tag 생성 규칙입니다.
+      # 이 예시는 git SHA를 그대로 tag로 씁니다.
+      # 실제 tag 예: 1a2b3c4d5e6f...
+      tags: |
+        type=raw,value=${{ github.sha }}
+
+      # GitHub Actions cache backend를 사용합니다.
+      cache-type: "gha"
+
+      # 같은 repo에서 여러 image를 빌드하면 image마다 다른 cache-scope를 씁니다.
+      cache-scope: "my-app"

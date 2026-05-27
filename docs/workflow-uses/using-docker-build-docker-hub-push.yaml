@@ -1,0 +1,44 @@
+name: Docker Image Build/Push to Docker Hub
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  docker-build-docker-hub-push:
+    name: Docker Image Build/Push to Docker Hub
+    uses: wibaek/gha/.github/workflows/docker-build-docker-hub-push.yaml@v1.0
+    with:
+      # Docker Hub 사용자명 또는 조직명입니다.
+      # 예: my-company
+      dockerhub-username: ${{ vars.DOCKERHUB_USERNAME }}
+
+      # push할 Docker Hub image 이름입니다.
+      # 실제 값 예: my-company/my-app
+      image-name: "${{ vars.DOCKERHUB_USERNAME }}/my-app"
+
+      # Docker build context입니다. 보통 repository root면 "."를 씁니다.
+      context: "."
+
+      # context 기준 Dockerfile 경로입니다.
+      dockerfile: "./Dockerfile"
+
+      # 빌드할 단일 CPU/OS 플랫폼입니다.
+      # 선택 예: linux/amd64, linux/arm64
+      platform: "linux/amd64"
+
+      # GitHub Actions cache backend를 사용합니다.
+      cache-type: "gha"
+
+      # 같은 repo에서 여러 image를 빌드하면 image마다 다른 cache-scope를 씁니다.
+      cache-scope: "app"
+    secrets:
+      # Docker Hub access token입니다. 계정 비밀번호가 아니라 access token을 넣습니다.
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}

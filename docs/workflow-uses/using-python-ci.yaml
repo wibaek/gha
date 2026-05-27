@@ -1,0 +1,19 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  python-ci:
+    name: Python CI
+    uses: wibaek/gha/.github/workflows/python-ci.yaml@v1.0
+    with:
+      # 사용할 Python 버전입니다.
+      # 선택 예: "3.11", "3.12", "3.13"
+      python-version: "3.12"

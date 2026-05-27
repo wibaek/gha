@@ -433,7 +433,7 @@ on:
 ```yaml
 jobs:
   node-ci:
-    uses: wibaek/github-automation/.github/workflows/node-ci.yaml@v1.0
+    uses: wibaek/gha/.github/workflows/node-ci.yaml@v1.0
     with:
       node-version: "22"
       package-manager: "pnpm"
@@ -444,13 +444,21 @@ secrets가 필요하면 호출하는 쪽에서 명시적으로 넘깁니다.
 ```yaml
 jobs:
   deploy:
-    uses: wibaek/github-automation/.github/workflows/ssh-compose-deploy.yaml@v1.0
+    uses: wibaek/gha/.github/workflows/ssh-compose-vps-deploy.yaml@v1.0
+    permissions:
+      contents: read
+      packages: read
     with:
-      host: ${{ vars.HOST }}
-      user: ${{ vars.USER }}
-      project-directory: "/srv/my-app"
+      app-name: "my-app"
+      service-name: "app"
+      remote-dir: "/srv/my-app"
+      compose-file: "deploy/compose.yaml"
+      image-reference: "ghcr.io/example/my-app@sha256:..."
     secrets:
-      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+      VPS_HOST: ${{ secrets.VPS_HOST }}
+      VPS_USER: ${{ secrets.VPS_USER }}
+      VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+      RUNTIME_ENV: ${{ secrets.PROD_APP_ENV }}
 ```
 
 ## CI 예시
@@ -471,7 +479,7 @@ permissions:
 
 jobs:
   node-ci:
-    uses: wibaek/github-automation/.github/workflows/node-ci.yaml@v1.0
+    uses: wibaek/gha/.github/workflows/node-ci.yaml@v1.0
     with:
       node-version: "22"
       package-manager: "pnpm"
@@ -498,7 +506,7 @@ permissions:
 
 jobs:
   python-ci:
-    uses: wibaek/github-automation/.github/workflows/python-ci.yaml@v1.0
+    uses: wibaek/gha/.github/workflows/python-ci.yaml@v1.0
     with:
       python-version: "3.12"
       python-package-tool: "uv"
@@ -524,35 +532,34 @@ permissions:
   contents: read
 
 jobs:
-  docker-build-ghcr-push:
+  docker-ghcr:
     permissions:
       contents: read
       packages: write
-    uses: wibaek/github-automation/.github/workflows/docker-build-ghcr-push.yaml@v1.0
+    uses: wibaek/gha/.github/workflows/docker-build-ghcr-push.yaml@v1.0
     with:
       image-name: "ghcr.io/${{ github.repository }}"
 
-  ssh-compose-image-load-deploy:
-    needs: docker-build-ghcr-push
+  deploy:
+    needs: docker-ghcr
+    uses: wibaek/gha/.github/workflows/ssh-compose-vps-deploy.yaml@v1.0
     permissions:
       contents: read
       packages: read
-    uses: wibaek/github-automation/.github/workflows/ssh-compose-image-load-deploy.yaml@v1.0
     with:
-      host: ${{ vars.HOST }}
-      user: ${{ vars.USER }}
-      environment: "prod"
-      environment-url: "https://example.com"
-      project-directory: "/srv/my-app"
-      compose-source-file: "docker-compose.yml"
-      compose-file: "docker-compose.yml"
-      env-file: ".env"
-      image-reference: ${{ needs.docker-build-ghcr-push.outputs.image-reference }}
-      local-image-name: "my-app"
-      service: "app"
+      app-name: "my-app"
+      service-name: "app"
+      remote-dir: "/srv/my-app"
+      compose-file: "deploy/compose.yaml"
+      image-reference: ${{ needs.docker-ghcr.outputs.image-reference }}
+      ghcr-login: true
+      ghcr-username: ${{ github.actor }}
     secrets:
-      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-      ENV_FILE_CONTENT: ${{ secrets.ENV_FILE_CONTENT }}
+      VPS_HOST: ${{ secrets.VPS_HOST }}
+      VPS_USER: ${{ secrets.VPS_USER }}
+      VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+      VPS_SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
+      RUNTIME_ENV: ${{ secrets.PROD_APP_ENV }}
 ```
 
 dev, stage, prod는 같은 reusable workflow를 호출하되 `environment`, host, path, cluster, service 같은 input만 환경별로 바꿉니다.
@@ -565,7 +572,7 @@ concurrency:
   cancel-in-progress: false
 ```
 
-SSH 배포 서버 유저와 key 준비 절차는 [SSH 배포 서버 준비](03_ssh_deploy_setup.md)를 봅니다.
+SSH 배포 서버 유저와 key 준비 절차는 [SSH 배포 서버 준비](../01_ssh_deploy_setup.md)를 봅니다.
 
 ## Cache
 
@@ -672,7 +679,7 @@ PR 제목 같은 값은 외부 사용자가 조작할 수 있습니다. shell �
 
 ```yaml
 steps:
-  - uses: wibaek/github-automation/.github/workflows/node-ci.yaml@v1.0
+  - uses: wibaek/gha/.github/workflows/node-ci.yaml@v1.0
 ```
 
 reusable workflow는 job에서 호출해야 합니다.
@@ -680,7 +687,7 @@ reusable workflow는 job에서 호출해야 합니다.
 ```yaml
 jobs:
   node-ci:
-    uses: wibaek/github-automation/.github/workflows/node-ci.yaml@v1.0
+    uses: wibaek/gha/.github/workflows/node-ci.yaml@v1.0
 ```
 
 ### job 사이에서 파일이 이어진다고 생각함

@@ -11,45 +11,45 @@ on:
         default: "ubuntu-latest"
 
       aws-region:
-        description: "AWS region"
+        description: "배포에 사용할 AWS region"
         required: true
         type: string
 
       aws-role-to-assume:
-        description: "GitHub OIDC로 assume할 AWS IAM role ARN"
+        description: "인증에 사용할 AWS IAM role ARN. GitHub OIDC로 assume."
         required: true
         type: string
 
       aws-role-session-name:
-        description: "AWS role session name"
+        description: "사용할 AWS role session 이름"
         required: false
         type: string
         default: "GitHubActions"
 
       environment:
-        description: "GitHub Environment 이름. 예: dev, stage, prod"
+        description: "배포할 GitHub Environment 이름. 예: dev, stage, prod"
         required: false
         type: string
         default: "prod"
 
       environment-url:
-        description: "GitHub Environment에 표시할 URL"
+        description: "배포 화면에 표시할 GitHub Environment URL"
         required: false
         type: string
         default: ""
 
       cluster:
-        description: "ECS cluster 이름"
+        description: "배포할 ECS cluster 이름"
         required: true
         type: string
 
       service:
-        description: "ECS service 이름"
+        description: "배포할 ECS service 이름"
         required: true
         type: string
 
       task-definition:
-        description: "ECS task definition JSON 파일 경로"
+        description: "사용할 ECS task definition JSON 파일 경로"
         required: false
         type: string
         default: ""
@@ -73,89 +73,89 @@ on:
         default: ""
 
       container-name:
-        description: "image를 교체할 ECS container 이름"
+        description: "이미지를 교체할 ECS container 이름"
         required: true
         type: string
 
       image:
-        description: "ECS task definition에 넣을 container image URI"
+        description: "컨테이너 image URI. ECS task definition에 넣을 값."
         required: true
         type: string
 
       environment-variables:
-        description: "container environment variables. KEY=value multi-line 형식."
+        description: "컨테이너 환경 변수. KEY=value multi-line 형식."
         required: false
         type: string
         default: ""
 
       container-secrets:
-        description: "ECS container secrets. KEY=valueFrom multi-line 형식."
+        description: "컨테이너 secret. KEY=valueFrom multi-line 형식."
         required: false
         type: string
         default: ""
 
       docker-labels:
-        description: "container docker labels. KEY=value multi-line 형식."
+        description: "컨테이너 docker label. KEY=value multi-line 형식."
         required: false
         type: string
         default: ""
 
       command:
-        description: "container command override"
+        description: "컨테이너 command override"
         required: false
         type: string
         default: ""
 
       wait-for-service-stability:
-        description: "ECS service stable 상태까지 기다릴지 여부"
+        description: "서비스가 stable 상태가 될 때까지 기다릴지 여부"
         required: false
         type: boolean
         default: true
 
       wait-for-minutes:
-        description: "service stability 대기 시간"
+        description: "서비스 안정화 대기 시간"
         required: false
         type: string
         default: "30"
 
       force-new-deployment:
-        description: "ECS service force new deployment 여부"
+        description: "새 ECS deployment를 강제로 시작할지 여부"
         required: false
         type: boolean
         default: false
 
       enable-ecs-managed-tags:
-        description: "ECS managed tags 활성화 여부"
+        description: "관리형 ECS tags 활성화 여부"
         required: false
         type: boolean
         default: false
 
       propagate-tags:
-        description: "ECS propagate-tags 값. 예: SERVICE"
+        description: "전파할 ECS tag 소스. 예: SERVICE"
         required: false
         type: string
         default: ""
 
       codedeploy-appspec:
-        description: "CODE_DEPLOY controller용 AppSpec 파일 경로"
+        description: "사용할 CodeDeploy controller용 AppSpec 파일 경로"
         required: false
         type: string
         default: ""
 
       codedeploy-application:
-        description: "CODE_DEPLOY controller용 CodeDeploy application 이름"
+        description: "사용할 CodeDeploy controller용 application 이름"
         required: false
         type: string
         default: ""
 
       codedeploy-deployment-group:
-        description: "CODE_DEPLOY controller용 deployment group 이름"
+        description: "사용할 CodeDeploy controller용 deployment group 이름"
         required: false
         type: string
         default: ""
 
       timeout-minutes:
-        description: "job 제한 시간"
+        description: "작업 제한 시간"
         required: false
         type: number
         default: 45
@@ -177,7 +177,7 @@ on:
         description: "등록된 ECS task definition ARN"
         value: ${{ jobs.deploy.outputs.task-definition-arn }}
       codedeploy-deployment-id:
-        description: "CodeDeploy deployment ID"
+        description: "생성된 CodeDeploy deployment ID"
         value: ${{ jobs.deploy.outputs.codedeploy-deployment-id }}
 
 permissions:

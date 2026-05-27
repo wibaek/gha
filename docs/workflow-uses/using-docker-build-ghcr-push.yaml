@@ -1,0 +1,28 @@
+name: Docker Image Build/Push to GHCR
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*.*.*"]
+
+jobs:
+  docker:
+    uses: wibaek/gha/.github/workflows/docker-build-ghcr-push.yaml@v1.0
+    permissions:
+      contents: read
+      packages: write
+    with:
+      # auto면 ghcr.io/<owner>/<repo>로 image 이름을 만듭니다.
+      # 예: repository가 wibaek/my-api면 ghcr.io/wibaek/my-api
+      image-name: auto
+
+      # Docker build context입니다. 보통 repository root면 "."를 씁니다.
+      context: .
+
+      # context 기준 Dockerfile 경로입니다.
+      dockerfile: ./Dockerfile
+
+      # 빌드할 단일 CPU/OS 플랫폼입니다.
+      # 선택 예: linux/amd64, linux/arm64
+      # 이 reusable workflow는 multi-platform 값인 "linux/amd64,linux/arm64"를 받지 않습니다.
+      platform: linux/amd64

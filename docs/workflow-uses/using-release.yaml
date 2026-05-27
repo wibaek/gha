@@ -14,6 +14,8 @@ permissions:
 jobs:
   release:
     name: Release
-    uses: wibaek/github-automation/.github/workflows/release.yaml@v1.0
+    uses: wibaek/gha/.github/workflows/release.yaml@v1.0
     with:
+      # release-please release type입니다.
+      # 선택 예: simple, node, python
       release-type: "simple"

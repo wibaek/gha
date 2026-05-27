@@ -20,78 +20,82 @@ Docker Buildx의 cache backend를 명시해야 다음 workflow run에서 이전 
 
 | Workflow | 용도 |
 | --- | --- |
-| `.github/workflows/docker-build-ghcr-push.yaml` | GHCR Docker Buildx 기반 이미지 빌드, cache, push |
-| `.github/workflows/docker-build-ecr-push.yaml` | ECR Docker Buildx 기반 이미지 빌드, cache, push |
-| `.github/workflows/docker-build-docker-hub-push.yaml` | Docker Hub Docker Buildx 기반 이미지 빌드, cache, push |
-| `.github/workflows/ssh-compose-image-load-deploy.yaml` | Actions runner에서 registry pull 후 SSH로 image와 compose file 전송, `docker compose up -d --no-build`, healthcheck |
-| `.github/workflows/ssh-compose-deploy.yaml` | 서버 registry credential로 `docker compose pull`, `docker compose up -d --no-build`, healthcheck |
+| `.github/workflows/docker-build-ghcr-push.yaml` | GHCR Docker Buildx 기반 단일 platform 이미지 빌드, cache, push |
+| `.github/workflows/docker-build-ecr-push.yaml` | ECR Docker Buildx 기반 단일 platform 이미지 빌드, cache, push |
+| `.github/workflows/docker-build-docker-hub-push.yaml` | Docker Hub Docker Buildx 기반 단일 platform 이미지 빌드, cache, push |
+| `.github/workflows/ssh-compose-vps-deploy.yaml` | 개인 VPS에서 GHCR pull 후 `app.env`, `compose.env`, Compose 배포 |
+| `.github/workflows/ssh-compose-image-load-deploy.yaml` | Actions runner에서 registry pull 후 SSH로 image와 compose file 전송, `docker compose up -d --no-build --pull never`, healthcheck |
 | `.github/workflows/ecs-deploy.yaml` | ECS task definition 렌더링 후 service update |
 
 GHCR에 이미지를 push하는 최소 예시는 다음과 같습니다.
 
 ```yaml
 jobs:
-  docker-build-ghcr-push:
-    uses: wibaek/github-automation/.github/workflows/docker-build-ghcr-push.yaml@v1.0
+  docker-ghcr:
+    uses: wibaek/gha/.github/workflows/docker-build-ghcr-push.yaml@v1.0
     with:
       image-name: "ghcr.io/${{ github.repository }}"
       context: "."
       dockerfile: "./Dockerfile"
+      platform: "linux/amd64"
       cache-type: "gha"
       cache-scope: "app"
 ```
 
-GHCR private image를 단일 VM에 배포할 때는 서버가 GHCR에 로그인하지 않게 두는 편이 깔끔합니다.
-빌드한 image reference를 runner에서 pull한 뒤, Docker image tar stream, compose file, env file을 서버로 전송합니다.
+개인 VPS에서 registry pull 방식으로 배포할 때는 `ssh-compose-vps-deploy.yaml`을 사용합니다.
+이 workflow는 repo의 compose file을 서버에 업로드하고, GitHub Secret에 저장한 runtime env 전체를 서버의 `app.env`로 매번 새로 작성합니다.
 
 ```yaml
 jobs:
-  docker-build-ghcr-push:
+  docker-ghcr:
     permissions:
       contents: read
       packages: write
-    uses: wibaek/github-automation/.github/workflows/docker-build-ghcr-push.yaml@v1.0
+    uses: wibaek/gha/.github/workflows/docker-build-ghcr-push.yaml@v1.0
     with:
       image-name: "ghcr.io/${{ github.repository }}"
       cache-scope: "app"
 
-  ssh-compose-image-load-deploy:
-    needs: docker-build-ghcr-push
+  deploy:
+    needs: docker-ghcr
+    uses: wibaek/gha/.github/workflows/ssh-compose-vps-deploy.yaml@v1.0
     permissions:
       contents: read
       packages: read
-    uses: wibaek/github-automation/.github/workflows/ssh-compose-image-load-deploy.yaml@v1.0
     with:
-      host: ${{ vars.HOST }}
-      user: ${{ vars.USER }}
-      known-hosts: ${{ vars.KNOWN_HOSTS }}
-      project-directory: "/srv/my-app"
-      compose-source-file: "docker-compose.yml"
-      compose-file: "docker-compose.yml"
-      env-file: ".env"
-      image-reference: ${{ needs.docker-build-ghcr-push.outputs.image-reference }}
-      local-image-name: "my-app"
-      service: "app"
-      healthcheck-url: "http://127.0.0.1:8000/health"
+      app-name: "my-app"
+      service-name: "app"
+      remote-dir: "/srv/my-app"
+      compose-file: "deploy/compose.yaml"
+      image-reference: ${{ needs.docker-ghcr.outputs.image-reference }}
+      ghcr-login: true
+      ghcr-username: ${{ github.actor }}
     secrets:
-      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-      ENV_FILE_CONTENT: ${{ secrets.ENV_FILE_CONTENT }}
+      VPS_HOST: ${{ secrets.VPS_HOST }}
+      VPS_USER: ${{ secrets.VPS_USER }}
+      VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+      VPS_SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
+      RUNTIME_ENV: ${{ secrets.PROD_APP_ENV }}
 ```
 
-서버 compose 파일은 workflow가 매번 업로드합니다. runtime secret이 들어 있는 `.env` 파일은 repository에 커밋하지 않고 GitHub Environment Secret의 `ENV_FILE_CONTENT`에 저장한 뒤 `env-file` input 경로로 업로드합니다.
-compose 파일에서는 `IMAGE_REF` 환경 변수를 local image reference로 사용합니다. 서버가 registry에 접근하지 않도록 workflow는 `docker compose up --pull never`를 강제하고, compose 파일에도 `pull_policy: never`를 같이 둡니다.
+서버 compose 파일은 workflow가 매번 업로드합니다. runtime secret이 들어 있는 `app.env` 내용은 repository에 커밋하지 않고 GitHub Secret의 `PROD_APP_ENV`에 저장합니다.
+compose 파일에서는 `IMAGE_REFERENCE` 환경 변수를 사용하고, 컨테이너 runtime env는 `env_file: ./app.env`로 주입합니다.
 
 ```yaml
 services:
   app:
-    image: ${IMAGE_REF}
-    pull_policy: never
+    image: ${IMAGE_REFERENCE:?IMAGE_REFERENCE is required}
     restart: unless-stopped
+    env_file:
+      - ./app.env
 ```
+
+서버가 GHCR에 직접 로그인하지 않는 image-load 방식이 필요하면 `ssh-compose-image-load-deploy.yaml`을 별도로 사용합니다.
+이 workflow도 같은 `RUNTIME_ENV -> app.env`, `compose.env -> IMAGE_REFERENCE` 계약을 사용합니다.
 
 이 방식에서는 VM에 `docker login ghcr.io`가 필요하지 않습니다. `GITHUB_TOKEN`은 Actions runner의 registry login에만 쓰이고, 서버에는 전달되지 않습니다.
 VM architecture가 runner와 다르면 `pull-platform: "linux/arm64"`처럼 서버에 맞는 platform을 명시합니다.
-SSH 배포 유저와 key 준비 절차는 [SSH 배포 서버 준비](03_ssh_deploy_setup.md)를 봅니다.
+SSH 배포 유저와 key 준비 절차는 [SSH 배포 서버 준비](../01_ssh_deploy_setup.md)를 봅니다.
 
 ## GHCR에 이미지 빌드 및 푸시
 
@@ -104,8 +108,6 @@ on:
   push:
     branches:
       - main
-    tags:
-      - "v*"
   workflow_dispatch:
 
 permissions:
@@ -148,7 +150,6 @@ jobs:
           file: ./Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=app
           cache-to: type=gha,mode=max,scope=app
 ```
@@ -218,7 +219,6 @@ jobs:
           context: .
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=app
           cache-to: type=gha,mode=max,scope=app,ignore-error=true
 ```
@@ -283,10 +283,11 @@ permissions:
 
 jobs:
   docker-build-docker-hub-push:
-    uses: wibaek/github-automation/.github/workflows/docker-build-docker-hub-push.yaml@v1.0
+    uses: wibaek/gha/.github/workflows/docker-build-docker-hub-push.yaml@v1.0
     with:
       dockerhub-username: ${{ vars.DOCKERHUB_USERNAME }}
       image-name: "${{ vars.DOCKERHUB_USERNAME }}/my-app"
+      platform: "linux/amd64"
       cache-scope: "my-app"
     secrets:
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -294,7 +295,8 @@ jobs:
 
 ## Multi-platform 이미지
 
-`linux/amd64`, `linux/arm64`를 같이 빌드하려면 QEMU와 Buildx를 설정하고 `platforms`를 넘깁니다.
+`docker-build-ghcr-push.yaml`은 운영 표준을 단순하게 유지하기 위해 단일 platform만 지원합니다.
+`linux/amd64`, `linux/arm64`를 같이 빌드해야 한다면 아래처럼 별도 workflow에서 QEMU와 Buildx를 직접 설정하고 `platforms`를 넘깁니다.
 
 ```yaml
 name: Docker 멀티 플랫폼 이미지 배포

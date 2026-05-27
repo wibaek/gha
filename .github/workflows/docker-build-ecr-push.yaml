@@ -11,23 +11,23 @@ on:
         default: "ubuntu-latest"
 
       aws-region:
-        description: "ECR 로그인에 사용할 AWS region"
+        description: "로그인할 ECR의 AWS region"
         required: true
         type: string
 
       aws-role-to-assume:
-        description: "ECR 로그인에 사용할 AWS IAM role ARN"
+        description: "로그인할 ECR에 사용할 AWS IAM role ARN"
         required: true
         type: string
 
       aws-role-session-name:
-        description: "AWS role session name"
+        description: "사용할 AWS role session 이름"
         required: false
         type: string
         default: "GitHubActions"
 
       ecr-registries:
-        description: "ECR login 대상 AWS account ID 목록. 비워두면 현재 account registry 사용."
+        description: "로그인할 ECR registry의 AWS account ID 목록. 비워두면 현재 account registry 사용."
         required: false
         type: string
         default: ""
@@ -38,43 +38,31 @@ on:
         type: string
 
       context:
-        description: "Docker build context"
+        description: "빌드 context 경로"
         required: false
         type: string
         default: "."
 
       dockerfile:
-        description: "Dockerfile 경로"
+        description: "사용할 Dockerfile 경로"
         required: false
         type: string
         default: "./Dockerfile"
 
-      platforms:
-        description: "빌드할 플랫폼 목록. 예: linux/amd64 또는 linux/amd64,linux/arm64"
+      platform:
+        description: "빌드할 단일 플랫폼. 예: linux/amd64"
         required: false
         type: string
         default: "linux/amd64"
 
-      target:
-        description: "Dockerfile target stage. 비워두면 지정하지 않음."
-        required: false
-        type: string
-        default: ""
-
       build-args:
-        description: "docker/build-push-action에 전달할 build-args"
-        required: false
-        type: string
-        default: ""
-
-      build-secrets:
-        description: "docker/build-push-action에 전달할 build secrets"
+        description: "빌드 시 docker/build-push-action에 전달할 build-args. 민감하지 않은 값만 허용. secret 금지."
         required: false
         type: string
         default: ""
 
       tags:
-        description: "docker/metadata-action tag 규칙"
+        description: "이미지 tag 생성을 위해 docker/metadata-action에 전달할 규칙"
         required: false
         type: string
         default: |
@@ -82,71 +70,47 @@ on:
           type=ref,event=tag
           type=sha
 
-      labels:
-        description: "docker/metadata-action에 추가로 전달할 labels"
-        required: false
-        type: string
-        default: ""
-
-      pull:
-        description: "빌드 전에 항상 base image를 pull할지 여부"
+      pull-base-image:
+        description: "빌드 전에 Dockerfile의 base image를 registry에서 새로 받을지 여부"
         required: false
         type: boolean
         default: false
 
-      no-cache:
-        description: "Docker build cache를 사용하지 않을지 여부"
+      use-cache:
+        description: "빌드 cache를 사용할지 여부"
         required: false
         type: boolean
-        default: false
+        default: true
 
       cache-type:
-        description: "Buildx cache backend. 선택: gha, registry, none."
+        description: "빌드 cache backend 종류. 선택: gha, registry, none."
         required: false
         type: string
         default: "gha"
 
       cache-scope:
-        description: "type=gha cache scope"
+        description: "사용할 GitHub Actions cache scope 값. auto면 repository, context, Dockerfile 기준으로 계산."
         required: false
         type: string
-        default: "docker-image"
+        default: "auto"
 
       cache-mode:
-        description: "cache export mode. 선택: min, max."
+        description: "빌드 cache export 방식. 선택: min, max."
         required: false
         type: string
         default: "max"
 
       registry-cache-ref:
-        description: "type=registry cache ref. 예: 123456789012.dkr.ecr.ap-northeast-2.amazonaws.com/my-app:buildcache"
+        description: "사용할 registry cache ref 값. 예: 123456789012.dkr.ecr.ap-northeast-2.amazonaws.com/my-app:buildcache"
         required: false
         type: string
         default: ""
 
-      setup-qemu:
-        description: "QEMU를 설정할지 여부. multi-platform 빌드에 사용."
-        required: false
-        type: boolean
-        default: false
-
-      provenance:
-        description: "Build provenance 생성 여부"
-        required: false
-        type: string
-        default: "false"
-
-      sbom:
-        description: "SBOM 생성 여부"
-        required: false
-        type: string
-        default: "false"
-
       timeout-minutes:
-        description: "job 제한 시간"
+        description: "작업 제한 시간(분)"
         required: false
         type: number
-        default: 45
+        default: 12
 
     outputs:
       image-tags:
@@ -162,7 +126,7 @@ on:
         description: "빌드된 Docker image digest"
         value: ${{ jobs.build.outputs.image-digest }}
       image-metadata:
-        description: "docker/build-push-action build metadata JSON"
+        description: "빌드 결과 metadata JSON. docker/build-push-action 출력값."
         value: ${{ jobs.build.outputs.image-metadata }}
 
 permissions:
@@ -210,6 +174,16 @@ jobs:
             exit 1
           fi
 
+          if [ -z "${{ inputs.platform }}" ]; then
+            echo "platform이 비어 있습니다."
+            exit 1
+          fi
+
+          if [[ "${{ inputs.platform }}" == *,* ]]; then
+            echo "docker-build-ecr-push.yaml은 단일 platform만 지원합니다: ${{ inputs.platform }}"
+            exit 1
+          fi
+
       - name: AWS 자격 증명 설정
         uses: aws-actions/configure-aws-credentials@v6
         with:
@@ -225,9 +199,30 @@ jobs:
       - name: 코드 체크아웃
         uses: actions/checkout@v6
 
-      - name: QEMU 설정
-        if: ${{ inputs.setup-qemu }}
-        uses: docker/setup-qemu-action@v4
+      - name: Docker cache scope 계산
+        id: cache
+        env:
+          CACHE_SCOPE: ${{ inputs.cache-scope }}
+          BUILD_CONTEXT: ${{ inputs.context }}
+          DOCKERFILE: ${{ inputs.dockerfile }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          scope="$CACHE_SCOPE"
+
+          if [ "$scope" = "auto" ]; then
+            scope="${REPOSITORY}-${BUILD_CONTEXT}-${DOCKERFILE}"
+          fi
+
+          scope="$(printf '%s' "$scope" | tr '/: ' '---' | tr -cd 'A-Za-z0-9_.-')"
+
+          if [ -z "$scope" ]; then
+            echo "cache-scope이 비어 있습니다."
+            exit 1
+          fi
+
+          echo "scope=$scope" >> "$GITHUB_OUTPUT"
 
       - name: Docker Buildx 설정
         uses: docker/setup-buildx-action@v4
@@ -238,7 +233,6 @@ jobs:
         with:
           images: ${{ inputs.image-name }}
           tags: ${{ inputs.tags }}
-          labels: ${{ inputs.labels }}
 
       - name: Docker 이미지 빌드 및 푸시
         id: build
@@ -246,19 +240,14 @@ jobs:
         with:
           context: ${{ inputs.context }}
           file: ${{ inputs.dockerfile }}
-          platforms: ${{ inputs.platforms }}
-          target: ${{ inputs.target }}
+          platforms: ${{ inputs.platform }}
           build-args: ${{ inputs.build-args }}
-          secrets: ${{ inputs.build-secrets }}
           push: true
-          pull: ${{ inputs.pull }}
-          no-cache: ${{ inputs.no-cache }}
+          pull: ${{ inputs['pull-base-image'] }}
+          no-cache: ${{ ! inputs['use-cache'] }}
           tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: ${{ inputs.cache-type == 'gha' && format('type=gha,scope={0}', inputs.cache-scope) || inputs.cache-type == 'registry' && format('type=registry,ref={0}', inputs.registry-cache-ref) || '' }}
-          cache-to: ${{ inputs.cache-type == 'gha' && format('type=gha,mode={0},scope={1},ignore-error=true', inputs.cache-mode, inputs.cache-scope) || inputs.cache-type == 'registry' && format('type=registry,ref={0},mode={1}', inputs.registry-cache-ref, inputs.cache-mode) || '' }}
-          provenance: ${{ inputs.provenance }}
-          sbom: ${{ inputs.sbom }}
+          cache-from: ${{ inputs.cache-type == 'gha' && format('type=gha,scope={0}', steps.cache.outputs.scope) || inputs.cache-type == 'registry' && format('type=registry,ref={0}', inputs.registry-cache-ref) || '' }}
+          cache-to: ${{ inputs.cache-type == 'gha' && format('type=gha,mode={0},scope={1},ignore-error=true', inputs.cache-mode, steps.cache.outputs.scope) || inputs.cache-type == 'registry' && format('type=registry,ref={0},mode={1}', inputs.registry-cache-ref, inputs.cache-mode) || '' }}
 
       - name: Docker 이미지 출력 정리
         id: image

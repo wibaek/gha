@@ -1,0 +1,65 @@
+name: SSH Compose Image Load Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      image-reference:
+        description: "배포할 image reference. 예: ghcr.io/owner/app@sha256:..."
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  ssh-compose-image-load-deploy:
+    name: SSH Docker Compose Image Load Deploy
+    uses: wibaek/gha/.github/workflows/ssh-compose-image-load-deploy.yaml@v1.0
+    with:
+      # runner가 image를 pull할 registry입니다.
+      # 선택 예: ghcr.io, docker.io
+      registry: "ghcr.io"
+
+      # 수동 실행 input으로 받은 image reference입니다.
+      # 실제 값 예: ghcr.io/wibaek/my-api@sha256:aaaaaaaa...
+      image-reference: ${{ inputs.image-reference }}
+
+      # 배포 대상 SSH host입니다.
+      host: ${{ vars.HOST }}
+
+      # 배포 대상 SSH user입니다.
+      user: ${{ vars.USER }}
+
+      # ssh-keyscan 대신 고정 known_hosts를 쓰고 싶을 때 넣습니다.
+      known-hosts: ${{ vars.KNOWN_HOSTS }}
+
+      # GitHub Environments에 표시될 환경 이름입니다.
+      environment: "prod"
+
+      # GitHub Environments에 표시될 배포 URL입니다.
+      environment-url: "https://example.com"
+
+      # 서버의 compose 프로젝트 디렉터리입니다.
+      project-directory: "/srv/my-app"
+
+      # 호출 repository에서 업로드할 compose 파일입니다.
+      compose-source-file: "compose.yaml"
+
+      # 서버 project-directory 기준 compose 파일 경로입니다.
+      compose-file: "compose.yaml"
+
+      # 서버에 load한 뒤 사용할 local image 이름입니다.
+      # 실제 local image ref 예: my-app:1a2b3c4d5e6f
+      local-image-name: "my-app"
+
+      # compose.yaml 안의 service 이름입니다.
+      service: "app"
+
+      # 배포 후 서버에서 curl로 확인할 URL입니다.
+      healthcheck-url: "http://127.0.0.1:8000/health"
+    secrets:
+      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      # 서버 app.env로 저장될 전체 runtime env 내용입니다.
+      RUNTIME_ENV: ${{ secrets.PROD_APP_ENV }}

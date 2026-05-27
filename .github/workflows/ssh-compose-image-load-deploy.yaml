@@ -28,7 +28,7 @@ on:
         type: string
 
       pull-platform:
-        description: "docker pull --platform 값. 예: linux/amd64. 비워두면 runner 기본 플랫폼 사용."
+        description: "이미지를 받을 때 docker pull --platform에 전달할 값. 예: linux/amd64. 비워두면 runner 기본 플랫폼 사용."
         required: false
         type: string
         default: ""
@@ -68,13 +68,13 @@ on:
         default: ""
 
       environment:
-        description: "GitHub Environment 이름. 예: dev, stage, prod"
+        description: "배포할 GitHub Environment 이름. 예: dev, stage, prod"
         required: false
         type: string
         default: "prod"
 
       environment-url:
-        description: "GitHub Environment에 표시할 URL"
+        description: "배포 화면에 표시할 GitHub Environment URL"
         required: false
         type: string
         default: ""
@@ -85,22 +85,16 @@ on:
         type: string
 
       compose-source-file:
-        description: "호출 repository에서 업로드할 compose file 경로"
+        description: "호출 repository에서 업로드할 compose 파일 경로"
         required: false
         type: string
-        default: "docker-compose.yml"
+        default: "compose.yaml"
 
       compose-file:
-        description: "서버 project-directory 기준 compose file 경로"
+        description: "서버 project-directory 기준 compose 파일 경로"
         required: false
         type: string
-        default: "docker-compose.yml"
-
-      env-file:
-        description: "서버 project-directory 기준 compose env file 경로. ENV_FILE_CONTENT secret이 있으면 이 경로로 업로드."
-        required: false
-        type: string
-        default: ""
+        default: "compose.yaml"
 
       compose-command:
         description: "서버에서 사용할 compose 명령어"
@@ -109,7 +103,7 @@ on:
         default: "docker compose"
 
       compose-profiles:
-        description: "COMPOSE_PROFILES 값. 비워두면 지정하지 않음."
+        description: "실행할 Docker Compose profile 값. 비워두면 지정하지 않음."
         required: false
         type: string
         default: ""
@@ -121,19 +115,19 @@ on:
         default: ""
 
       remove-orphans:
-        description: "docker compose up에 --remove-orphans를 붙일지 여부"
+        description: "배포 시 docker compose up에 --remove-orphans를 붙일지 여부"
         required: false
         type: boolean
         default: true
 
       pre-deploy-command:
-        description: "compose up 전에 서버 project-directory에서 실행할 명령어"
+        description: "배포 전 서버 project-directory에서 실행할 명령어"
         required: false
         type: string
         default: ""
 
       post-deploy-command:
-        description: "healthcheck 이후 서버 project-directory에서 실행할 명령어"
+        description: "상태 확인 이후 서버 project-directory에서 실행할 명령어"
         required: false
         type: string
         default: ""
@@ -145,19 +139,19 @@ on:
         default: ""
 
       healthcheck-timeout-seconds:
-        description: "healthcheck 제한 시간"
+        description: "상태 확인 제한 시간"
         required: false
         type: string
         default: "120"
 
       healthcheck-interval-seconds:
-        description: "healthcheck 재시도 간격"
+        description: "상태 확인 재시도 간격"
         required: false
         type: string
         default: "5"
 
       timeout-minutes:
-        description: "job 제한 시간"
+        description: "작업 제한 시간"
         required: false
         type: number
         default: 20
@@ -179,8 +173,9 @@ on:
         required: true
       REGISTRY_PASSWORD:
         required: false
-      ENV_FILE_CONTENT:
-        required: false
+      RUNTIME_ENV:
+        description: "서버에 app.env로 쓸 전체 env 파일 내용"
+        required: true
 
 permissions:
   contents: read
@@ -211,8 +206,6 @@ jobs:
           REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
           IMAGE_REFERENCE: ${{ inputs.image-reference }}
           COMPOSE_FILE: ${{ inputs.compose-file }}
-          ENV_FILE: ${{ inputs.env-file }}
-          ENV_FILE_CONTENT: ${{ secrets.ENV_FILE_CONTENT }}
         run: |
           set -euo pipefail
 
@@ -223,16 +216,6 @@ jobs:
 
           if [ "${COMPOSE_FILE#/}" != "$COMPOSE_FILE" ]; then
             echo "compose-file은 project-directory 기준 상대 경로여야 합니다: $COMPOSE_FILE"
-            exit 1
-          fi
-
-          if [ -n "$ENV_FILE" ] && [ "${ENV_FILE#/}" != "$ENV_FILE" ]; then
-            echo "env-file은 project-directory 기준 상대 경로여야 합니다: $ENV_FILE"
-            exit 1
-          fi
-
-          if [ -n "$ENV_FILE_CONTENT" ] && [ -z "$ENV_FILE" ]; then
-            echo "ENV_FILE_CONTENT secret을 사용하려면 env-file input이 필요합니다."
             exit 1
           fi
 
@@ -324,6 +307,39 @@ jobs:
           echo "reference=$local_image_reference" >> "$GITHUB_OUTPUT"
           echo "tag=$LOCAL_IMAGE_TAG" >> "$GITHUB_OUTPUT"
 
+      - name: 배포 env 파일 준비
+        id: files
+        env:
+          IMAGE_REFERENCE: ${{ steps.local-image.outputs.reference }}
+          IMAGE_TAG: ${{ steps.local-image.outputs.tag }}
+          RUNTIME_ENV: ${{ secrets.RUNTIME_ENV }}
+        run: |
+          set -euo pipefail
+
+          deploy_tmp_dir="$RUNNER_TEMP/compose-image-load-deploy"
+          mkdir -p "$deploy_tmp_dir"
+
+          compose_env_file="$deploy_tmp_dir/compose.env"
+          runtime_env_file="$deploy_tmp_dir/app.env"
+
+          if [ -z "$RUNTIME_ENV" ]; then
+            echo "RUNTIME_ENV secret이 비어 있습니다."
+            exit 1
+          fi
+
+          {
+            printf 'IMAGE_REFERENCE=%s\n' "$IMAGE_REFERENCE"
+            printf 'IMAGE_REF=%s\n' "$IMAGE_REFERENCE"
+            printf 'IMAGE_TAG=%s\n' "$IMAGE_TAG"
+          } > "$compose_env_file"
+
+          printf '%s' "$RUNTIME_ENV" > "$runtime_env_file"
+
+          chmod 600 "$compose_env_file" "$runtime_env_file"
+
+          echo "compose-env-file=$compose_env_file" >> "$GITHUB_OUTPUT"
+          echo "runtime-env-file=$runtime_env_file" >> "$GITHUB_OUTPUT"
+
       - name: 서버 project directory 준비
         env:
           SSH_HOST: ${{ inputs.host }}
@@ -331,14 +347,12 @@ jobs:
           SSH_USER: ${{ inputs.user }}
           PROJECT_DIRECTORY: ${{ inputs.project-directory }}
           COMPOSE_FILE: ${{ inputs.compose-file }}
-          ENV_FILE: ${{ inputs.env-file }}
         run: |
           set -euo pipefail
 
-          remote_env=$(printf 'PROJECT_DIRECTORY=%q COMPOSE_FILE=%q ENV_FILE=%q' \
+          remote_env=$(printf 'PROJECT_DIRECTORY=%q COMPOSE_FILE=%q' \
             "$PROJECT_DIRECTORY" \
-            "$COMPOSE_FILE" \
-            "$ENV_FILE")
+            "$COMPOSE_FILE")
 
           ssh \
             -i ~/.ssh/deploy_key \
@@ -355,12 +369,6 @@ jobs:
             mkdir -p "$PROJECT_DIRECTORY/$compose_dir"
           fi
 
-          if [ -n "$ENV_FILE" ]; then
-            env_dir="$(dirname "$ENV_FILE")"
-            if [ "$env_dir" != "." ]; then
-              mkdir -p "$PROJECT_DIRECTORY/$env_dir"
-            fi
-          fi
           REMOTE
 
       - name: Compose 파일 업로드
@@ -379,38 +387,11 @@ jobs:
             -P "$SSH_PORT" \
             -o StrictHostKeyChecking=yes \
             "$COMPOSE_SOURCE_FILE" \
-            "$SSH_USER@$SSH_HOST:$PROJECT_DIRECTORY/$COMPOSE_FILE"
+            "$SSH_USER@$SSH_HOST:$PROJECT_DIRECTORY/$COMPOSE_FILE.tmp"
 
-      - name: Env 파일 업로드
-        env:
-          SSH_HOST: ${{ inputs.host }}
-          SSH_PORT: ${{ inputs.port }}
-          SSH_USER: ${{ inputs.user }}
-          PROJECT_DIRECTORY: ${{ inputs.project-directory }}
-          ENV_FILE: ${{ inputs.env-file }}
-          ENV_FILE_CONTENT: ${{ secrets.ENV_FILE_CONTENT }}
-        run: |
-          set -euo pipefail
-
-          if [ -z "$ENV_FILE_CONTENT" ]; then
-            exit 0
-          fi
-
-          env_file_tmp="$(mktemp)"
-          trap 'rm -f "$env_file_tmp"' EXIT
-          chmod 600 "$env_file_tmp"
-          printf '%s' "$ENV_FILE_CONTENT" > "$env_file_tmp"
-
-          scp \
-            -i ~/.ssh/deploy_key \
-            -P "$SSH_PORT" \
-            -o StrictHostKeyChecking=yes \
-            "$env_file_tmp" \
-            "$SSH_USER@$SSH_HOST:$PROJECT_DIRECTORY/$ENV_FILE"
-
-          remote_env=$(printf 'PROJECT_DIRECTORY=%q ENV_FILE=%q' \
+          remote_env=$(printf 'PROJECT_DIRECTORY=%q COMPOSE_FILE=%q' \
             "$PROJECT_DIRECTORY" \
-            "$ENV_FILE")
+            "$COMPOSE_FILE")
 
           ssh \
             -i ~/.ssh/deploy_key \
@@ -419,7 +400,47 @@ jobs:
             "$SSH_USER@$SSH_HOST" \
             "$remote_env bash -se" <<'REMOTE'
           set -euo pipefail
-          chmod 600 "$PROJECT_DIRECTORY/$ENV_FILE"
+          mv "$PROJECT_DIRECTORY/$COMPOSE_FILE.tmp" "$PROJECT_DIRECTORY/$COMPOSE_FILE"
+          REMOTE
+
+      - name: compose.env와 app.env 업로드
+        env:
+          SSH_HOST: ${{ inputs.host }}
+          SSH_PORT: ${{ inputs.port }}
+          SSH_USER: ${{ inputs.user }}
+          PROJECT_DIRECTORY: ${{ inputs.project-directory }}
+          COMPOSE_ENV_FILE: ${{ steps.files.outputs.compose-env-file }}
+          RUNTIME_ENV_FILE: ${{ steps.files.outputs.runtime-env-file }}
+        run: |
+          set -euo pipefail
+
+          scp \
+            -i ~/.ssh/deploy_key \
+            -P "$SSH_PORT" \
+            -o StrictHostKeyChecking=yes \
+            "$COMPOSE_ENV_FILE" \
+            "$SSH_USER@$SSH_HOST:$PROJECT_DIRECTORY/compose.env.tmp"
+
+          scp \
+            -i ~/.ssh/deploy_key \
+            -P "$SSH_PORT" \
+            -o StrictHostKeyChecking=yes \
+            "$RUNTIME_ENV_FILE" \
+            "$SSH_USER@$SSH_HOST:$PROJECT_DIRECTORY/app.env.tmp"
+
+          remote_env=$(printf 'PROJECT_DIRECTORY=%q' "$PROJECT_DIRECTORY")
+
+          ssh \
+            -i ~/.ssh/deploy_key \
+            -p "$SSH_PORT" \
+            -o StrictHostKeyChecking=yes \
+            "$SSH_USER@$SSH_HOST" \
+            "$remote_env bash -se" <<'REMOTE'
+          set -euo pipefail
+          chmod 600 "$PROJECT_DIRECTORY/compose.env.tmp" "$PROJECT_DIRECTORY/app.env.tmp"
+          mv "$PROJECT_DIRECTORY/compose.env.tmp" "$PROJECT_DIRECTORY/compose.env"
+          mv "$PROJECT_DIRECTORY/app.env.tmp" "$PROJECT_DIRECTORY/app.env"
+          chmod 600 "$PROJECT_DIRECTORY/compose.env" "$PROJECT_DIRECTORY/app.env"
           REMOTE
 
       - name: 이미지를 서버 Docker cache로 전송
@@ -445,11 +466,10 @@ jobs:
           SSH_USER: ${{ inputs.user }}
           PROJECT_DIRECTORY: ${{ inputs.project-directory }}
           COMPOSE_FILE: ${{ inputs.compose-file }}
-          ENV_FILE: ${{ inputs.env-file }}
           COMPOSE_COMMAND: ${{ inputs.compose-command }}
           COMPOSE_PROFILES_VALUE: ${{ inputs.compose-profiles }}
           SERVICE: ${{ inputs.service }}
-          IMAGE_REF: ${{ steps.local-image.outputs.reference }}
+          IMAGE_REFERENCE: ${{ steps.local-image.outputs.reference }}
           IMAGE_TAG: ${{ steps.local-image.outputs.tag }}
           REMOVE_ORPHANS: ${{ inputs.remove-orphans }}
           PRE_DEPLOY_COMMAND: ${{ inputs.pre-deploy-command }}
@@ -460,14 +480,13 @@ jobs:
         run: |
           set -euo pipefail
 
-          remote_env=$(printf 'PROJECT_DIRECTORY=%q COMPOSE_FILE=%q ENV_FILE=%q COMPOSE_COMMAND=%q COMPOSE_PROFILES=%q SERVICE=%q IMAGE_REF=%q IMAGE_TAG=%q REMOVE_ORPHANS=%q PRE_DEPLOY_COMMAND=%q POST_DEPLOY_COMMAND=%q HEALTHCHECK_URL=%q HEALTHCHECK_TIMEOUT_SECONDS=%q HEALTHCHECK_INTERVAL_SECONDS=%q' \
+          remote_env=$(printf 'PROJECT_DIRECTORY=%q COMPOSE_FILE=%q COMPOSE_COMMAND=%q COMPOSE_PROFILES=%q SERVICE=%q IMAGE_REFERENCE=%q IMAGE_TAG=%q REMOVE_ORPHANS=%q PRE_DEPLOY_COMMAND=%q POST_DEPLOY_COMMAND=%q HEALTHCHECK_URL=%q HEALTHCHECK_TIMEOUT_SECONDS=%q HEALTHCHECK_INTERVAL_SECONDS=%q' \
             "$PROJECT_DIRECTORY" \
             "$COMPOSE_FILE" \
-            "$ENV_FILE" \
             "$COMPOSE_COMMAND" \
             "$COMPOSE_PROFILES_VALUE" \
             "$SERVICE" \
-            "$IMAGE_REF" \
+            "$IMAGE_REFERENCE" \
             "$IMAGE_TAG" \
             "$REMOVE_ORPHANS" \
             "$PRE_DEPLOY_COMMAND" \
@@ -486,16 +505,14 @@ jobs:
 
           cd "$PROJECT_DIRECTORY"
 
-          compose_args=(-f "$COMPOSE_FILE")
-          if [ -n "$ENV_FILE" ]; then
-            compose_args+=(--env-file "$ENV_FILE")
-          fi
+          compose_args=(-f "$COMPOSE_FILE" --env-file compose.env)
 
           export COMPOSE_PROFILES
-          export IMAGE_REF
+          export IMAGE_REFERENCE
+          export IMAGE_REF="$IMAGE_REFERENCE"
           export IMAGE_TAG
 
-          docker image inspect "$IMAGE_REF" >/dev/null
+          docker image inspect "$IMAGE_REFERENCE" >/dev/null
 
           if [ -n "$PRE_DEPLOY_COMMAND" ]; then
             bash -lc "$PRE_DEPLOY_COMMAND"

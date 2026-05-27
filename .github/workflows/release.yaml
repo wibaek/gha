@@ -11,7 +11,7 @@ on:
         default: "ubuntu-latest"
 
       release-type:
-        description: "release-please release type. manifest config를 쓰면 빈 문자열로 둠."
+        description: "사용할 release-please release type. manifest config를 쓰면 빈 문자열로 둠."
         required: false
         type: string
         default: "simple"
@@ -23,31 +23,31 @@ on:
         default: ""
 
       target-branch:
-        description: "release PR을 만들 대상 브랜치. 비워두면 release-please가 감지."
+        description: "릴리스 PR을 만들 대상 브랜치. 비워두면 release-please가 감지."
         required: false
         type: string
         default: ""
 
       config-file:
-        description: "release-please config 파일 경로"
+        description: "사용할 release-please config 파일 경로"
         required: false
         type: string
         default: ""
 
       manifest-file:
-        description: "release-please manifest 파일 경로"
+        description: "사용할 release-please manifest 파일 경로"
         required: false
         type: string
         default: ""
 
       include-component-in-tag:
-        description: "tag와 branch에 component 이름을 포함할지 여부"
+        description: "컴포넌트 이름을 tag와 branch에 포함할지 여부"
         required: false
         type: boolean
         default: false
 
       versioning-strategy:
-        description: "release-please versioning strategy"
+        description: "사용할 release-please versioning strategy"
         required: false
         type: string
         default: "default"
@@ -59,7 +59,7 @@ on:
         default: ""
 
       timeout-minutes:
-        description: "job 제한 시간"
+        description: "작업 제한 시간"
         required: false
         type: number
         default: 15
@@ -70,13 +70,13 @@ on:
 
     outputs:
       release-created:
-        description: "root component release 생성 여부"
+        description: "최상위 component release 생성 여부"
         value: ${{ jobs.release.outputs.release-created }}
       releases-created:
-        description: "release 생성 여부"
+        description: "릴리스 생성 여부"
         value: ${{ jobs.release.outputs.releases-created }}
       prs-created:
-        description: "release PR 생성 또는 갱신 여부"
+        description: "릴리스 PR 생성 또는 갱신 여부"
         value: ${{ jobs.release.outputs.prs-created }}
       tag-name:
         description: "생성된 release tag"
@@ -94,13 +94,13 @@ on:
         description: "생성된 patch version"
         value: ${{ jobs.release.outputs.patch }}
       sha:
-        description: "release tag가 가리키는 SHA"
+        description: "릴리스 tag가 가리키는 SHA"
         value: ${{ jobs.release.outputs.sha }}
       html-url:
-        description: "GitHub Release URL"
+        description: "생성된 GitHub Release URL"
         value: ${{ jobs.release.outputs.html-url }}
       paths-released:
-        description: "release된 path 목록 JSON"
+        description: "릴리스된 path 목록 JSON"
         value: ${{ jobs.release.outputs.paths-released }}
 
 permissions:
