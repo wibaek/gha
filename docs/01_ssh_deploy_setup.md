@@ -23,24 +23,24 @@ sudo chmod 600 /home/deploy/.ssh/authorized_keys
 
 ## SSH Key 생성
 
-로컬 머신에서 GitHub Actions가 사용할 SSH key를 생성합니다.
+아래 명령은 서버 인스턴스에서 실행합니다.
+서버에서 GitHub Actions 접속용 key를 만들고, public key를 바로 `deploy` 유저의 `authorized_keys`에 등록합니다.
+출력된 private key는 로컬 파일 `./github-actions-deploy`로 저장하거나 GitHub secret에 바로 등록합니다.
 
 ```bash
-ssh-keygen -t ed25519 -C "github-actions my-app deploy" -f ./github-actions-my-app-deploy -N ""
-```
+sudo -u deploy ssh-keygen -t ed25519 -C "github-actions deploy" -f /home/deploy/.ssh/github-actions-deploy -N ""
 
-생성한 public key를 서버의 배포 유저에 등록합니다.
-아래 예시의 `ubuntu@example.com`은 서버에 sudo 권한으로 접속할 수 있는 기존 관리자 계정으로 바꿉니다.
+sudo sh -c 'cat /home/deploy/.ssh/github-actions-deploy.pub >> /home/deploy/.ssh/authorized_keys'
+sudo chown deploy:deploy /home/deploy/.ssh/authorized_keys
+sudo chmod 600 /home/deploy/.ssh/authorized_keys
 
-```bash
-cat ./github-actions-my-app-deploy.pub | ssh ubuntu@example.com \
-  'sudo tee -a /home/deploy/.ssh/authorized_keys >/dev/null && sudo chown deploy:deploy /home/deploy/.ssh/authorized_keys && sudo chmod 600 /home/deploy/.ssh/authorized_keys'
+sudo cat /home/deploy/.ssh/github-actions-deploy
 ```
 
 접속과 Docker 권한을 확인합니다.
 
 ```bash
-ssh -i ./github-actions-my-app-deploy deploy@example.com '
+ssh -i ./github-actions-deploy deploy@example.com '
 set -eu
 docker ps >/dev/null
 docker compose version >/dev/null
@@ -59,7 +59,7 @@ ssh-keyscan -p 22 -H example.com > known_hosts
 gh secret set VPS_HOST --body "example.com"
 gh secret set VPS_USER --body "deploy"
 gh secret set VPS_SSH_KNOWN_HOSTS < known_hosts
-gh secret set VPS_SSH_KEY < ./github-actions-my-app-deploy
+gh secret set VPS_SSH_KEY < ./github-actions-deploy
 gh secret set PROD_APP_ENV < ./.env.prod
 ```
 
@@ -69,8 +69,15 @@ gh secret set PROD_APP_ENV < ./.env.prod
 gh secret set VPS_HOST --env prod --body "example.com"
 gh secret set VPS_USER --env prod --body "deploy"
 gh secret set VPS_SSH_KNOWN_HOSTS --env prod < known_hosts
-gh secret set VPS_SSH_KEY --env prod < ./github-actions-my-app-deploy
+gh secret set VPS_SSH_KEY --env prod < ./github-actions-deploy
 gh secret set PROD_APP_ENV --env prod < ./.env.prod
+```
+
+GitHub secret 등록과 접속 확인이 끝나면 서버에 남은 임시 private key를 삭제합니다.
+서버 접속용 private key는 최종적으로 GitHub secret이나 로컬에만 있으면 됩니다.
+
+```bash
+sudo rm /home/deploy/.ssh/github-actions-deploy /home/deploy/.ssh/github-actions-deploy.pub
 ```
 
 `ssh-compose-vps-deploy.yaml`은 기본적으로 deploy job의 `GITHUB_TOKEN`으로 GHCR에 로그인합니다.
