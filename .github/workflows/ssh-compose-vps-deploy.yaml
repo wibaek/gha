@@ -3,6 +3,13 @@ name: SSH Docker Compose VPS Deploy
 on:
   workflow_call:
     inputs:
+      # runs-on label 참고: https://docs.github.com/en/actions/reference/runners/github-hosted-runners
+      runs-on:
+        description: "실행할 러너 라벨"
+        required: false
+        type: string
+        default: "ubuntu-latest"
+
       app-name:
         description: "사용할 Docker Compose 프로젝트 이름"
         required: true
@@ -65,7 +72,7 @@ permissions:
 jobs:
   deploy:
     name: SSH Docker Compose VPS Deploy
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runs-on }}
 
     steps:
       - name: 코드 체크아웃

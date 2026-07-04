@@ -11,11 +11,12 @@
 sudo useradd --create-home --shell /bin/bash --user-group deploy
 sudo usermod -aG docker deploy
 
-sudo install -d -m 755 -o deploy -g deploy /srv/my-app
 sudo install -d -m 700 -o deploy -g deploy /home/deploy/.ssh
 sudo touch /home/deploy/.ssh/authorized_keys
 sudo chown deploy:deploy /home/deploy/.ssh/authorized_keys
 sudo chmod 600 /home/deploy/.ssh/authorized_keys
+
+sudo install -d -m 755 -o deploy -g deploy /srv/my-app
 ```
 
 `docker` 그룹 권한은 사실상 root 권한에 가깝습니다.

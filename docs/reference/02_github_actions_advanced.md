@@ -63,6 +63,7 @@ jobs:
       contents: read
       packages: read
     with:
+      runs-on: "ubuntu-slim"
       app-name: "my-app"
       service-name: "app"
       remote-dir: "/srv/my-app"
@@ -80,6 +81,9 @@ jobs:
 
 서버 compose 파일은 workflow가 매번 업로드합니다. runtime secret이 들어 있는 `app.env` 내용은 repository에 커밋하지 않고 GitHub Secret의 `PROD_APP_ENV`에 저장합니다.
 compose 파일에서는 `IMAGE_REFERENCE` 환경 변수를 사용하고, 컨테이너 runtime env는 `env_file: ./app.env`로 주입합니다.
+
+이 배포 workflow는 서버에서 `docker compose pull/up`을 실행하므로 Actions runner의 CPU/RAM 사용량이 작습니다.
+짧은 SSH 배포 job은 `runs-on: "ubuntu-slim"`을 선택할 수 있습니다.
 
 ```yaml
 services:

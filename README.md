@@ -218,6 +218,7 @@ jobs:
       contents: read
       packages: read
     with:
+      runs-on: ubuntu-slim
       app-name: my-app
       service-name: app
       remote-dir: /srv/my-app
@@ -232,6 +233,10 @@ jobs:
       VPS_SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
       RUNTIME_ENV: ${{ secrets.PROD_APP_ENV }}
 ```
+
+`ssh-compose-vps-deploy.yaml`은 Docker 작업을 VPS에서 실행하고 Actions runner는 SSH 연결과 파일 업로드를 주로 담당합니다.
+이런 배포 job은 `runs-on: ubuntu-slim`을 사용할 수 있습니다.
+반대로 runner에서 image를 pull/save/load하는 `ssh-compose-image-load-deploy.yaml`은 Docker client와 CPU 사용량이 더 크므로 일반 Linux runner를 유지하는 편이 안전합니다.
 
 GitHub Secrets 운영 방식:
 
