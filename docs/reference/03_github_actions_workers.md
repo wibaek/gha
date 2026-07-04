@@ -65,10 +65,11 @@ GitHub가 제공하는 기본 runner입니다.
 runs-on: ubuntu-latest
 ```
 
-권장:
+선택 기준:
 
-- 일반적인 Node/Python/Docker build는 `ubuntu-latest` 또는 명시 버전인 `ubuntu-24.04`를 우선 사용합니다.
+- 일반적인 Node/Python/Docker build는 `ubuntu-latest` 또는 명시 버전인 `ubuntu-24.04`를 사용할 수 있습니다.
 - 재현성이 중요하면 `ubuntu-latest`보다 `ubuntu-24.04`처럼 고정 label을 씁니다.
+- SSH 연결, API call, 짧은 관리 작업처럼 runner compute가 거의 필요 없는 job은 `ubuntu-slim`을 검토합니다.
 - macOS와 Windows는 필요한 경우에만 씁니다. 비용과 대기 시간이 커질 수 있습니다.
 
 ### Standard runner label과 사양
@@ -442,6 +443,30 @@ jobs:
 
 정확한 숫자는 자주 바뀔 수 있으므로 GitHub 공식 billing과 limits 문서를 확인합니다.
 
+### Job concurrency limit
+
+GitHub-hosted runner의 job concurrency limit은 한 계정 또는 조직에서 동시에 실행할 수 있는 job 수 제한입니다.
+workflow의 `concurrency` 키로 같은 배포를 직렬화하는 것과 다릅니다.
+
+현재 GitHub 공식 limits 문서 기준은 다음과 같습니다.
+
+| Runner type | GitHub plan | 전체 동시 job | macOS 동시 job | GPU 동시 job |
+| --- | --- | ---: | ---: | ---: |
+| Standard GitHub-hosted runner | Free | 20 | 5 | N/A |
+| Standard GitHub-hosted runner | Pro | 40 | 5 | N/A |
+| Standard GitHub-hosted runner | Team | 60 | 5 | N/A |
+| Standard GitHub-hosted runner | Enterprise | 500 | 50 | N/A |
+| Larger runner | Team | 1000 | 5 | 100 |
+| Larger runner | Enterprise | 1000 | 50 | 100 |
+
+주의할 점:
+
+- 이 값은 repository 하나의 제한이 아니라 account/organization plan에 걸리는 동시 실행 capacity로 봅니다.
+- macOS 동시 job 제한은 standard GitHub-hosted runner와 GitHub-hosted larger runner가 공유합니다.
+- larger runner의 per-runner concurrency limit은 runner type 설정에 따라 달라집니다.
+- GitHub Support를 통해 job concurrency limit 증가를 요청할 수 있습니다.
+- 제한에 걸리면 job이 queue에 오래 머물거나, 일부 limit에서는 workflow/job이 취소될 수 있습니다.
+
 ### Workflow label과 billing SKU
 
 Workflow label은 실행 환경을 고르는 이름이고, billing SKU는 GitHub billing 시스템에서 쓰는 과금 bucket입니다.
@@ -505,8 +530,8 @@ GitHub Pro included usage
 
 | 상황 | 판단 |
 | --- | --- |
-| 일반 private Linux CI | `ubuntu-latest` 기준으로 생각하면 가장 덜 헷갈림 |
-| 매우 가벼운 job | `ubuntu-slim` 실험 가치 있음 |
+| 일반 private Linux CI | 필요한 도구와 runtime이 standard image에 있는지 확인 |
+| 매우 가벼운 job | `ubuntu-slim` 검토 |
 | Docker build / 무거운 compile | `ubuntu-latest` 이상 권장 |
 | Windows 전용 테스트 | 비용 증가 감수 |
 | macOS/iOS build | 비용이 커서 job 수와 trigger를 엄격히 제한 |
@@ -516,8 +541,8 @@ GitHub Pro included usage
 
 이 저장소의 reusable workflow는 다음 기준을 따릅니다.
 
-1. 기본 runner는 `ubuntu-latest`로 둡니다.
-2. 필요하면 caller가 `runs-on` input으로 runner label을 바꿉니다.
+1. caller가 `runs-on` input으로 runner label을 바꿀 수 있게 둡니다.
+2. SSH 중심의 가벼운 배포 job은 `ubuntu-slim`을 검토합니다.
 3. Docker build/push는 registry별 workflow를 우선 사용합니다.
 4. 개인 VPS 기본 배포는 `ssh-compose-vps-deploy.yaml`을 사용합니다.
 5. VM에 registry credential을 두지 않을 때만 `ssh-compose-image-load-deploy.yaml`을 사용합니다.
@@ -567,6 +592,7 @@ untrusted code를 실행하면 runner가 오염될 수 있습니다.
 - [GitHub Docs: GitHub Actions billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions)
 - [GitHub Docs: Actions runner pricing](https://docs.github.com/billing/reference/actions-minute-multipliers)
 - [GitHub Docs: Actions limits](https://docs.github.com/actions/reference/limits)
+- [GitHub Docs: Job concurrency limits for GitHub-hosted runners](https://docs.github.com/en/actions/reference/limits#job-concurrency-limits-for-github-hosted-runners)
 - [GitHub Docs: Secure use reference](https://docs.github.com/en/actions/how-tos/security-for-github-actions/security-guides/security-hardening-for-github-actions?learn=getting_started)
 - [GitHub Changelog: Reduced pricing for GitHub-hosted runners usage](https://github.blog/changelog/2026-01-01-reduced-pricing-for-github-hosted-runners-usage/)
 - [GitHub Changelog: 1 vCPU Linux runner generally available](https://github.blog/changelog/2026-01-22-1-vcpu-linux-runner-now-generally-available-in-github-actions/)
