@@ -562,7 +562,7 @@ jobs:
       RUNTIME_ENV: ${{ secrets.PROD_APP_ENV }}
 ```
 
-dev, stage, prod는 같은 reusable workflow를 호출하되 `environment`, host, path, cluster, service 같은 input만 환경별로 바꿉니다.
+dev, stg, prod는 같은 reusable workflow를 호출하되 `environment`, host, path, cluster, service 같은 input만 환경별로 바꿉니다.
 
 같은 environment에 여러 배포가 겹치면 같은 concurrency group으로 묶습니다. prod는 중간 취소보다 순서대로 처리하는 쪽이 보수적이고, dev/stage는 최신 실행만 남기고 이전 실행을 취소해도 됩니다.
 

@@ -121,7 +121,7 @@ jobs:
 - `ssh-compose-image-load-deploy.yaml`은 서버에서 `docker compose up --pull never`를 강제합니다. caller repo의 compose service도 `image: ${IMAGE_REFERENCE}`와 `pull_policy: never`를 사용합니다.
 - ECS 배포는 `docker-build-ecr-push.yaml` 뒤에 `ecs-deploy.yaml`을 붙입니다.
 - 배포 job은 build/push workflow의 `image-reference` output을 받아서 같은 이미지를 배포합니다.
-- dev, stage, prod는 같은 deploy workflow를 쓰고 `environment`, host/path/cluster/service 같은 input만 바꿉니다.
+- dev, stg, prod는 같은 deploy workflow를 쓰고 `environment`, host/path/cluster/service 같은 input만 바꿉니다.
 - Cloudflare Pages/Workers 배포는 Docker 라인과 별도 adapter workflow를 사용합니다.
 - 릴리즈 관리는 `release.yaml`이 담당하고, Docker build/deploy는 별도 job으로 명시적으로 연결합니다.
 
