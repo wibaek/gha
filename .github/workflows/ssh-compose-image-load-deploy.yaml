@@ -17,7 +17,7 @@ on:
         default: "ghcr.io"
 
       registry-username:
-        description: "러너 registry 로그인 사용자명. 비워두면 github.actor 사용."
+        description: "러너 registry 로그인 사용자명. 로그인할 때만 사용하며 비워두면 github.actor 사용."
         required: false
         type: string
         default: ""
@@ -178,6 +178,7 @@ on:
       SSH_PRIVATE_KEY:
         required: true
       REGISTRY_PASSWORD:
+        description: "러너 registry 로그인 password/token. 비워두면 ghcr.io는 github.token, 그 외 registry는 로그인 없이 pull."
         required: false
       RUNTIME_ENV:
         description: "서버에 app.env로 쓸 전체 env 파일 내용"
@@ -208,19 +209,12 @@ jobs:
     steps:
       - name: 배포 설정 검증
         env:
-          REGISTRY: ${{ inputs.registry }}
-          REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
           IMAGE_REFERENCE: ${{ inputs.image-reference }}
         run: |
           set -euo pipefail
 
           if [ -z "$IMAGE_REFERENCE" ]; then
             echo "image-reference가 필요합니다."
-            exit 1
-          fi
-
-          if [ "$REGISTRY" != "ghcr.io" ] && [ -z "$REGISTRY_PASSWORD" ]; then
-            echo "ghcr.io가 아닌 private registry에서 pull하려면 REGISTRY_PASSWORD secret이 필요합니다."
             exit 1
           fi
 
@@ -262,11 +256,26 @@ jobs:
           chmod 600 ~/.ssh/known_hosts
 
       - name: Runner registry 로그인
-        uses: docker/login-action@v4
-        with:
-          registry: ${{ inputs.registry }}
-          username: ${{ inputs.registry-username != '' && inputs.registry-username || github.actor }}
-          password: ${{ secrets.REGISTRY_PASSWORD != '' && secrets.REGISTRY_PASSWORD || github.token }}
+        env:
+          REGISTRY: ${{ inputs.registry }}
+          REGISTRY_USERNAME: ${{ inputs.registry-username != '' && inputs.registry-username || github.actor }}
+          REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          if [ -n "$REGISTRY_PASSWORD" ]; then
+            password="$REGISTRY_PASSWORD"
+          elif [ "$REGISTRY" = "ghcr.io" ]; then
+            password="$GHCR_TOKEN"
+          else
+            echo "registry credential이 없어 login을 건너뜁니다: $REGISTRY"
+            exit 0
+          fi
+
+          printf '%s' "$password" | docker login "$REGISTRY" \
+            --username "$REGISTRY_USERNAME" \
+            --password-stdin
 
       - name: Runner에서 이미지 pull
         env:

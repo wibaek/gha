@@ -19,6 +19,8 @@ jobs:
     with:
       # runner가 image를 pull할 registry입니다.
       # 선택 예: ghcr.io, docker.io
+      # REGISTRY_PASSWORD가 없으면 ghcr.io는 github.token으로 로그인하고,
+      # 그 외 registry는 login 없이 anonymous pull을 시도합니다.
       registry: "ghcr.io"
 
       # 수동 실행 input으로 받은 image reference입니다.
@@ -63,3 +65,6 @@ jobs:
 
       # 서버 app.env로 저장될 전체 runtime env 내용입니다.
       RUNTIME_ENV: ${{ secrets.PROD_APP_ENV }}
+
+      # GHCR이 아닌 private registry를 pull할 때만 필요합니다.
+      # REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
