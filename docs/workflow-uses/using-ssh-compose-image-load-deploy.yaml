@@ -46,7 +46,7 @@ jobs:
       # 호출 repository에서 업로드할 compose 파일입니다.
       compose-source-file: "compose.yaml"
 
-      # 서버 project-directory 기준 compose 파일 경로입니다.
+      # 서버 compose 파일 경로입니다. 절대경로 또는 project-directory 기준 상대경로를 사용할 수 있습니다.
       compose-file: "compose.yaml"
 
       # 서버에 load한 뒤 사용할 local image 이름입니다.

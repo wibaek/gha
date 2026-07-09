@@ -91,7 +91,7 @@ on:
         default: "compose.yaml"
 
       compose-file:
-        description: "서버 project-directory 기준 compose 파일 경로"
+        description: "서버 compose 파일 경로. 절대경로 또는 project-directory 기준 상대경로"
         required: false
         type: string
         default: "compose.yaml"
@@ -211,17 +211,11 @@ jobs:
           REGISTRY: ${{ inputs.registry }}
           REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
           IMAGE_REFERENCE: ${{ inputs.image-reference }}
-          COMPOSE_FILE: ${{ inputs.compose-file }}
         run: |
           set -euo pipefail
 
           if [ -z "$IMAGE_REFERENCE" ]; then
             echo "image-reference가 필요합니다."
-            exit 1
-          fi
-
-          if [ "${COMPOSE_FILE#/}" != "$COMPOSE_FILE" ]; then
-            echo "compose-file은 project-directory 기준 상대 경로여야 합니다: $COMPOSE_FILE"
             exit 1
           fi
 
@@ -370,10 +364,14 @@ jobs:
 
           mkdir -p "$PROJECT_DIRECTORY"
 
-          compose_dir="$(dirname "$COMPOSE_FILE")"
-          if [ "$compose_dir" != "." ]; then
-            mkdir -p "$PROJECT_DIRECTORY/$compose_dir"
+          if [ "${COMPOSE_FILE#/}" != "$COMPOSE_FILE" ]; then
+            COMPOSE_PATH="$COMPOSE_FILE"
+          else
+            COMPOSE_PATH="$PROJECT_DIRECTORY/$COMPOSE_FILE"
           fi
+
+          compose_dir="$(dirname "$COMPOSE_PATH")"
+          mkdir -p "$compose_dir"
 
           REMOTE
 
@@ -400,7 +398,13 @@ jobs:
             "$remote_env bash -se" <<'REMOTE'
           set -euo pipefail
 
-          for path in "$PROJECT_DIRECTORY/$COMPOSE_FILE" "$PROJECT_DIRECTORY/compose.env" "$PROJECT_DIRECTORY/app.env"; do
+          if [ "${COMPOSE_FILE#/}" != "$COMPOSE_FILE" ]; then
+            COMPOSE_PATH="$COMPOSE_FILE"
+          else
+            COMPOSE_PATH="$PROJECT_DIRECTORY/$COMPOSE_FILE"
+          fi
+
+          for path in "$COMPOSE_PATH" "$PROJECT_DIRECTORY/compose.env" "$PROJECT_DIRECTORY/app.env"; do
             if [ -f "$path" ]; then
               cp -p "$path" "$path.prev"
             fi
@@ -423,7 +427,7 @@ jobs:
             -P "$SSH_PORT" \
             -o StrictHostKeyChecking=yes \
             "$COMPOSE_SOURCE_FILE" \
-            "$SSH_USER@$SSH_HOST:$PROJECT_DIRECTORY/$COMPOSE_FILE.tmp"
+            "$SSH_USER@$SSH_HOST:$PROJECT_DIRECTORY/.compose-upload.tmp"
 
           remote_env=$(printf 'PROJECT_DIRECTORY=%q COMPOSE_FILE=%q' \
             "$PROJECT_DIRECTORY" \
@@ -436,7 +440,14 @@ jobs:
             "$SSH_USER@$SSH_HOST" \
             "$remote_env bash -se" <<'REMOTE'
           set -euo pipefail
-          mv "$PROJECT_DIRECTORY/$COMPOSE_FILE.tmp" "$PROJECT_DIRECTORY/$COMPOSE_FILE"
+
+          if [ "${COMPOSE_FILE#/}" != "$COMPOSE_FILE" ]; then
+            COMPOSE_PATH="$COMPOSE_FILE"
+          else
+            COMPOSE_PATH="$PROJECT_DIRECTORY/$COMPOSE_FILE"
+          fi
+
+          mv "$PROJECT_DIRECTORY/.compose-upload.tmp" "$COMPOSE_PATH"
           REMOTE
 
       - name: compose.env와 app.env 업로드
