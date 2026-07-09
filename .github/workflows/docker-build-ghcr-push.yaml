@@ -132,39 +132,44 @@ jobs:
 
     steps:
       - name: Docker 설정 검증
+        env:
+          CACHE_TYPE: ${{ inputs.cache-type }}
+          CACHE_MODE: ${{ inputs.cache-mode }}
+          REGISTRY_CACHE_REF: ${{ inputs.registry-cache-ref }}
+          PLATFORM: ${{ inputs.platform }}
         run: |
           set -euo pipefail
 
-          case "${{ inputs.cache-type }}" in
+          case "$CACHE_TYPE" in
             gha|registry|none)
               ;;
             *)
-              echo "지원하지 않는 cache-type: ${{ inputs.cache-type }}"
+              echo "지원하지 않는 cache-type: $CACHE_TYPE"
               exit 1
               ;;
           esac
 
-          case "${{ inputs.cache-mode }}" in
+          case "$CACHE_MODE" in
             min|max)
               ;;
             *)
-              echo "지원하지 않는 cache-mode: ${{ inputs.cache-mode }}"
+              echo "지원하지 않는 cache-mode: $CACHE_MODE"
               exit 1
               ;;
           esac
 
-          if [ "${{ inputs.cache-type }}" = "registry" ] && [ -z "${{ inputs.registry-cache-ref }}" ]; then
+          if [ "$CACHE_TYPE" = "registry" ] && [ -z "$REGISTRY_CACHE_REF" ]; then
             echo "cache-type이 registry이면 registry-cache-ref가 필요합니다."
             exit 1
           fi
 
-          if [ -z "${{ inputs.platform }}" ]; then
+          if [ -z "$PLATFORM" ]; then
             echo "platform이 비어 있습니다."
             exit 1
           fi
 
-          if [[ "${{ inputs.platform }}" == *,* ]]; then
-            echo "docker-build-ghcr-push.yaml은 단일 platform만 지원합니다: ${{ inputs.platform }}"
+          if [[ "$PLATFORM" == *,* ]]; then
+            echo "docker-build-ghcr-push.yaml은 단일 platform만 지원합니다: $PLATFORM"
             exit 1
           fi
 
