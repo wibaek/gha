@@ -96,6 +96,12 @@ on:
         type: string
         default: "compose.yaml"
 
+      backup-active-files:
+        description: "배포 파일을 덮어쓰기 전에 기존 compose 파일, compose.env, app.env를 .prev로 백업할지 여부"
+        required: false
+        type: boolean
+        default: true
+
       compose-command:
         description: "서버에서 사용할 compose 명령어"
         required: false
@@ -369,6 +375,36 @@ jobs:
             mkdir -p "$PROJECT_DIRECTORY/$compose_dir"
           fi
 
+          REMOTE
+
+      - name: 기존 배포 파일 백업
+        if: ${{ inputs.backup-active-files }}
+        env:
+          SSH_HOST: ${{ inputs.host }}
+          SSH_PORT: ${{ inputs.port }}
+          SSH_USER: ${{ inputs.user }}
+          PROJECT_DIRECTORY: ${{ inputs.project-directory }}
+          COMPOSE_FILE: ${{ inputs.compose-file }}
+        run: |
+          set -euo pipefail
+
+          remote_env=$(printf 'PROJECT_DIRECTORY=%q COMPOSE_FILE=%q' \
+            "$PROJECT_DIRECTORY" \
+            "$COMPOSE_FILE")
+
+          ssh \
+            -i ~/.ssh/deploy_key \
+            -p "$SSH_PORT" \
+            -o StrictHostKeyChecking=yes \
+            "$SSH_USER@$SSH_HOST" \
+            "$remote_env bash -se" <<'REMOTE'
+          set -euo pipefail
+
+          for path in "$PROJECT_DIRECTORY/$COMPOSE_FILE" "$PROJECT_DIRECTORY/compose.env" "$PROJECT_DIRECTORY/app.env"; do
+            if [ -f "$path" ]; then
+              cp -p "$path" "$path.prev"
+            fi
+          done
           REMOTE
 
       - name: Compose 파일 업로드
