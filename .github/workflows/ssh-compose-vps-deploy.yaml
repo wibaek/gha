@@ -49,11 +49,41 @@ on:
         type: string
         default: ""
 
+      environment:
+        description: "배포할 GitHub Environment 이름. 예: dev, stage, prod"
+        required: false
+        type: string
+        default: "prod"
+
+      environment-url:
+        description: "배포 화면에 표시할 GitHub Environment URL"
+        required: false
+        type: string
+        default: ""
+
       backup-active-files:
         description: "배포 파일을 덮어쓰기 전에 기존 compose.yaml, compose.env, app.env를 .prev로 백업할지 여부"
         required: false
         type: boolean
         default: true
+
+      timeout-minutes:
+        description: "작업 제한 시간"
+        required: false
+        type: number
+        default: 20
+
+      concurrency-group:
+        description: "배포 concurrency group. 비워두면 repository와 environment 기준으로 자동 생성."
+        required: false
+        type: string
+        default: ""
+
+      cancel-in-progress:
+        description: "같은 concurrency group의 진행 중인 배포를 취소할지 여부"
+        required: false
+        type: boolean
+        default: false
 
     secrets:
       VPS_HOST:
@@ -79,6 +109,15 @@ jobs:
   deploy:
     name: SSH Docker Compose VPS Deploy
     runs-on: ${{ inputs.runs-on }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+
+    environment:
+      name: ${{ inputs.environment }}
+      url: ${{ inputs.environment-url }}
+
+    concurrency:
+      group: ${{ inputs.concurrency-group != '' && inputs.concurrency-group || format('deploy-{0}-{1}', github.repository, inputs.environment) }}
+      cancel-in-progress: ${{ inputs.cancel-in-progress }}
 
     steps:
       - name: 코드 체크아웃

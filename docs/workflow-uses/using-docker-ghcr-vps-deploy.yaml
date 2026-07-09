@@ -36,6 +36,19 @@ jobs:
       # SSH 연결과 파일 업로드 중심의 가벼운 배포 job이면 ubuntu-slim을 쓸 수 있습니다.
       runs-on: ubuntu-slim
 
+      # GitHub Environments에 표시될 환경 이름입니다.
+      environment: prod
+
+      # GitHub Environments에 표시될 배포 URL입니다.
+      environment-url: https://example.com
+
+      # 같은 환경 배포를 직렬화합니다.
+      concurrency-group: deploy-${{ github.repository }}-prod
+      cancel-in-progress: false
+
+      # SSH 배포 job 제한 시간입니다.
+      timeout-minutes: 20
+
       # Docker Compose project 이름입니다.
       # 서버에서 docker compose -p my-app ... 형태로 사용됩니다.
       app-name: my-app
