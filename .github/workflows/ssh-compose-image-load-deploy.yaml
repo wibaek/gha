@@ -261,8 +261,12 @@ jobs:
           REGISTRY_USERNAME: ${{ inputs.registry-username != '' && inputs.registry-username || github.actor }}
           REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
           GHCR_TOKEN: ${{ github.token }}
+          DOCKER_CONFIG: ${{ runner.temp }}/compose-image-load-docker-config
         run: |
           set -euo pipefail
+
+          mkdir -p "$DOCKER_CONFIG"
+          chmod 700 "$DOCKER_CONFIG"
 
           if [ -n "$REGISTRY_PASSWORD" ]; then
             password="$REGISTRY_PASSWORD"
@@ -281,6 +285,7 @@ jobs:
         env:
           IMAGE_REFERENCE: ${{ inputs.image-reference }}
           PULL_PLATFORM: ${{ inputs.pull-platform }}
+          DOCKER_CONFIG: ${{ runner.temp }}/compose-image-load-docker-config
         run: |
           set -euo pipefail
 
@@ -290,6 +295,19 @@ jobs:
           fi
 
           docker pull "${pull_args[@]}" "$IMAGE_REFERENCE"
+
+      - name: Runner registry credential 정리
+        if: ${{ always() }}
+        env:
+          REGISTRY: ${{ inputs.registry }}
+          DOCKER_CONFIG: ${{ runner.temp }}/compose-image-load-docker-config
+        run: |
+          set -euo pipefail
+
+          if [ -d "$DOCKER_CONFIG" ]; then
+            docker logout "$REGISTRY" >/dev/null 2>&1 || true
+            rm -rf "$DOCKER_CONFIG"
+          fi
 
       - name: 서버 local image tag 생성
         id: local-image
