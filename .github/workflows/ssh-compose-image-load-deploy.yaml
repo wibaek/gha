@@ -17,7 +17,7 @@ on:
         default: "ghcr.io"
 
       registry-username:
-        description: "러너 registry 로그인 사용자명. 비워두면 github.actor 사용."
+        description: "러너 registry 로그인 사용자명. 로그인할 때만 사용하며 비워두면 github.actor 사용."
         required: false
         type: string
         default: ""
@@ -68,7 +68,7 @@ on:
         default: ""
 
       environment:
-        description: "배포할 GitHub Environment 이름. 예: dev, stage, prod"
+        description: "배포할 GitHub Environment 이름. 예: dev, stg, prod"
         required: false
         type: string
         default: "prod"
@@ -91,10 +91,16 @@ on:
         default: "compose.yaml"
 
       compose-file:
-        description: "서버 project-directory 기준 compose 파일 경로"
+        description: "서버 compose 파일 경로. 절대경로 또는 project-directory 기준 상대경로"
         required: false
         type: string
         default: "compose.yaml"
+
+      backup-active-files:
+        description: "배포 파일을 덮어쓰기 전에 기존 compose 파일, compose.env, app.env를 .prev로 백업할지 여부"
+        required: false
+        type: boolean
+        default: true
 
       compose-command:
         description: "서버에서 사용할 compose 명령어"
@@ -172,6 +178,7 @@ on:
       SSH_PRIVATE_KEY:
         required: true
       REGISTRY_PASSWORD:
+        description: "러너 registry 로그인 password/token. 비워두면 ghcr.io는 github.token, 그 외 registry는 로그인 없이 pull."
         required: false
       RUNTIME_ENV:
         description: "서버에 app.env로 쓸 전체 env 파일 내용"
@@ -202,25 +209,12 @@ jobs:
     steps:
       - name: 배포 설정 검증
         env:
-          REGISTRY: ${{ inputs.registry }}
-          REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
           IMAGE_REFERENCE: ${{ inputs.image-reference }}
-          COMPOSE_FILE: ${{ inputs.compose-file }}
         run: |
           set -euo pipefail
 
           if [ -z "$IMAGE_REFERENCE" ]; then
             echo "image-reference가 필요합니다."
-            exit 1
-          fi
-
-          if [ "${COMPOSE_FILE#/}" != "$COMPOSE_FILE" ]; then
-            echo "compose-file은 project-directory 기준 상대 경로여야 합니다: $COMPOSE_FILE"
-            exit 1
-          fi
-
-          if [ "$REGISTRY" != "ghcr.io" ] && [ -z "$REGISTRY_PASSWORD" ]; then
-            echo "ghcr.io가 아닌 private registry에서 pull하려면 REGISTRY_PASSWORD secret이 필요합니다."
             exit 1
           fi
 
@@ -262,16 +256,36 @@ jobs:
           chmod 600 ~/.ssh/known_hosts
 
       - name: Runner registry 로그인
-        uses: docker/login-action@v4
-        with:
-          registry: ${{ inputs.registry }}
-          username: ${{ inputs.registry-username != '' && inputs.registry-username || github.actor }}
-          password: ${{ secrets.REGISTRY_PASSWORD != '' && secrets.REGISTRY_PASSWORD || github.token }}
+        env:
+          REGISTRY: ${{ inputs.registry }}
+          REGISTRY_USERNAME: ${{ inputs.registry-username != '' && inputs.registry-username || github.actor }}
+          REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+          GHCR_TOKEN: ${{ github.token }}
+          DOCKER_CONFIG: ${{ runner.temp }}/compose-image-load-docker-config
+        run: |
+          set -euo pipefail
+
+          mkdir -p "$DOCKER_CONFIG"
+          chmod 700 "$DOCKER_CONFIG"
+
+          if [ -n "$REGISTRY_PASSWORD" ]; then
+            password="$REGISTRY_PASSWORD"
+          elif [ "$REGISTRY" = "ghcr.io" ]; then
+            password="$GHCR_TOKEN"
+          else
+            echo "registry credential이 없어 login을 건너뜁니다: $REGISTRY"
+            exit 0
+          fi
+
+          printf '%s' "$password" | docker login "$REGISTRY" \
+            --username "$REGISTRY_USERNAME" \
+            --password-stdin
 
       - name: Runner에서 이미지 pull
         env:
           IMAGE_REFERENCE: ${{ inputs.image-reference }}
           PULL_PLATFORM: ${{ inputs.pull-platform }}
+          DOCKER_CONFIG: ${{ runner.temp }}/compose-image-load-docker-config
         run: |
           set -euo pipefail
 
@@ -281,6 +295,19 @@ jobs:
           fi
 
           docker pull "${pull_args[@]}" "$IMAGE_REFERENCE"
+
+      - name: Runner registry credential 정리
+        if: ${{ always() }}
+        env:
+          REGISTRY: ${{ inputs.registry }}
+          DOCKER_CONFIG: ${{ runner.temp }}/compose-image-load-docker-config
+        run: |
+          set -euo pipefail
+
+          if [ -d "$DOCKER_CONFIG" ]; then
+            docker logout "$REGISTRY" >/dev/null 2>&1 || true
+            rm -rf "$DOCKER_CONFIG"
+          fi
 
       - name: 서버 local image tag 생성
         id: local-image
@@ -364,11 +391,51 @@ jobs:
 
           mkdir -p "$PROJECT_DIRECTORY"
 
-          compose_dir="$(dirname "$COMPOSE_FILE")"
-          if [ "$compose_dir" != "." ]; then
-            mkdir -p "$PROJECT_DIRECTORY/$compose_dir"
+          if [ "${COMPOSE_FILE#/}" != "$COMPOSE_FILE" ]; then
+            COMPOSE_PATH="$COMPOSE_FILE"
+          else
+            COMPOSE_PATH="$PROJECT_DIRECTORY/$COMPOSE_FILE"
           fi
 
+          compose_dir="$(dirname "$COMPOSE_PATH")"
+          mkdir -p "$compose_dir"
+
+          REMOTE
+
+      - name: 기존 배포 파일 백업
+        if: ${{ inputs.backup-active-files }}
+        env:
+          SSH_HOST: ${{ inputs.host }}
+          SSH_PORT: ${{ inputs.port }}
+          SSH_USER: ${{ inputs.user }}
+          PROJECT_DIRECTORY: ${{ inputs.project-directory }}
+          COMPOSE_FILE: ${{ inputs.compose-file }}
+        run: |
+          set -euo pipefail
+
+          remote_env=$(printf 'PROJECT_DIRECTORY=%q COMPOSE_FILE=%q' \
+            "$PROJECT_DIRECTORY" \
+            "$COMPOSE_FILE")
+
+          ssh \
+            -i ~/.ssh/deploy_key \
+            -p "$SSH_PORT" \
+            -o StrictHostKeyChecking=yes \
+            "$SSH_USER@$SSH_HOST" \
+            "$remote_env bash -se" <<'REMOTE'
+          set -euo pipefail
+
+          if [ "${COMPOSE_FILE#/}" != "$COMPOSE_FILE" ]; then
+            COMPOSE_PATH="$COMPOSE_FILE"
+          else
+            COMPOSE_PATH="$PROJECT_DIRECTORY/$COMPOSE_FILE"
+          fi
+
+          for path in "$COMPOSE_PATH" "$PROJECT_DIRECTORY/compose.env" "$PROJECT_DIRECTORY/app.env"; do
+            if [ -f "$path" ]; then
+              cp -p "$path" "$path.prev"
+            fi
+          done
           REMOTE
 
       - name: Compose 파일 업로드
@@ -387,7 +454,7 @@ jobs:
             -P "$SSH_PORT" \
             -o StrictHostKeyChecking=yes \
             "$COMPOSE_SOURCE_FILE" \
-            "$SSH_USER@$SSH_HOST:$PROJECT_DIRECTORY/$COMPOSE_FILE.tmp"
+            "$SSH_USER@$SSH_HOST:$PROJECT_DIRECTORY/.compose-upload.tmp"
 
           remote_env=$(printf 'PROJECT_DIRECTORY=%q COMPOSE_FILE=%q' \
             "$PROJECT_DIRECTORY" \
@@ -400,7 +467,14 @@ jobs:
             "$SSH_USER@$SSH_HOST" \
             "$remote_env bash -se" <<'REMOTE'
           set -euo pipefail
-          mv "$PROJECT_DIRECTORY/$COMPOSE_FILE.tmp" "$PROJECT_DIRECTORY/$COMPOSE_FILE"
+
+          if [ "${COMPOSE_FILE#/}" != "$COMPOSE_FILE" ]; then
+            COMPOSE_PATH="$COMPOSE_FILE"
+          else
+            COMPOSE_PATH="$PROJECT_DIRECTORY/$COMPOSE_FILE"
+          fi
+
+          mv "$PROJECT_DIRECTORY/.compose-upload.tmp" "$COMPOSE_PATH"
           REMOTE
 
       - name: compose.env와 app.env 업로드

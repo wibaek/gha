@@ -197,13 +197,11 @@ jobs:
 - `.github/workflows/cloudflare-pages-deploy.yaml`
 - `.github/workflows/cloudflare-workers-deploy.yaml`
 - `.github/workflows/ecs-deploy.yaml`
+- `.github/workflows/ssh-compose-vps-deploy.yaml`
 - `.github/workflows/ssh-compose-image-load-deploy.yaml`
 
 `docker-build-*.yaml` 계열은 image build/push가 목적이므로 runtime environment를 붙이지 않습니다.
 배포 environment는 build job이 아니라 deploy job에 붙이는 편이 맞습니다.
-
-`ssh-compose-vps-deploy.yaml`처럼 environment input이 없는 workflow는 GitHub Environment 보호 규칙과 deployment UI에 직접 연결되지 않습니다.
-필요하면 called workflow에 `environment` input과 job-level `environment`를 추가해야 합니다.
 
 ## 설정 방법
 

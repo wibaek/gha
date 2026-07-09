@@ -49,6 +49,42 @@ on:
         type: string
         default: ""
 
+      environment:
+        description: "배포할 GitHub Environment 이름. 예: dev, stg, prod"
+        required: false
+        type: string
+        default: "prod"
+
+      environment-url:
+        description: "배포 화면에 표시할 GitHub Environment URL"
+        required: false
+        type: string
+        default: ""
+
+      backup-active-files:
+        description: "배포 파일을 덮어쓰기 전에 기존 compose.yaml, compose.env, app.env를 .prev로 백업할지 여부"
+        required: false
+        type: boolean
+        default: true
+
+      timeout-minutes:
+        description: "작업 제한 시간"
+        required: false
+        type: number
+        default: 20
+
+      concurrency-group:
+        description: "배포 concurrency group. 비워두면 repository와 environment 기준으로 자동 생성."
+        required: false
+        type: string
+        default: ""
+
+      cancel-in-progress:
+        description: "같은 concurrency group의 진행 중인 배포를 취소할지 여부"
+        required: false
+        type: boolean
+        default: false
+
     secrets:
       VPS_HOST:
         required: true
@@ -73,6 +109,15 @@ jobs:
   deploy:
     name: SSH Docker Compose VPS Deploy
     runs-on: ${{ inputs.runs-on }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+
+    environment:
+      name: ${{ inputs.environment }}
+      url: ${{ inputs.environment-url }}
+
+    concurrency:
+      group: ${{ inputs.concurrency-group != '' && inputs.concurrency-group || format('deploy-{0}-{1}', github.repository, inputs.environment) }}
+      cancel-in-progress: ${{ inputs.cancel-in-progress }}
 
     steps:
       - name: 코드 체크아웃
@@ -159,6 +204,28 @@ jobs:
           set -euo pipefail
 
           mkdir -p "$REMOTE_DIR"
+          REMOTE
+
+      - name: 기존 배포 파일 백업
+        if: ${{ inputs.backup-active-files }}
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          REMOTE_DIR: ${{ inputs.remote-dir }}
+        run: |
+          set -euo pipefail
+
+          remote_env=$(printf 'REMOTE_DIR=%q' "$REMOTE_DIR")
+
+          ssh -i ~/.ssh/deploy_key "$VPS_USER@$VPS_HOST" "$remote_env bash -s" <<'REMOTE'
+          set -euo pipefail
+
+          for file in compose.yaml compose.env app.env; do
+            path="$REMOTE_DIR/$file"
+            if [ -f "$path" ]; then
+              cp -p "$path" "$path.prev"
+            fi
+          done
           REMOTE
 
       - name: compose.yaml 업로드
